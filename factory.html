@@ -64,6 +64,8 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
 .status-pill{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;white-space:nowrap;}
 .status-pending{background:var(--yellow-bg);color:#8a6d1a;}
 .status-decided{background:var(--gray-10);color:var(--gray-70);}
+.addon-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--gray-08);flex-wrap:wrap;}
+.addon-row:first-child{border-top:none;}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:200;padding:16px;}
 .overlay.show{display:flex;}
 .modal{background:#fff;border-radius:14px;width:100%;max-width:420px;padding:20px;max-height:88vh;overflow:auto;}
@@ -73,7 +75,18 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
 .field select,.field input,.field textarea{width:100%;padding:9px 10px;border:1px solid var(--gray-20);border-radius:6px;font-size:14.5px;font-family:inherit;}
 .modal-actions{display:flex;gap:8px;margin-top:16px;}
 .modal-actions .btn,.modal-actions .btn-outline{flex:1;text-align:center;}
-@media (max-width:800px){ .grid3{grid-template-columns:1fr;} table,thead,tbody,tr{display:block;} th{display:none;} td{display:flex;justify-content:space-between;border:none;padding:4px 0;} tr{border-bottom:1px solid var(--gray-10);padding:8px 0;} }
+@media (max-width:800px){
+  .grid3{grid-template-columns:1fr;}
+  table,thead,tbody,tr{display:block;}
+  th{display:none;}
+  td{display:flex;justify-content:space-between;align-items:center;gap:10px;border:none;padding:5px 0;text-align:right;}
+  td::before{content:attr(data-label);color:var(--gray-50);font-size:11.5px;text-align:left;white-space:nowrap;}
+  tr{border-bottom:1px solid var(--gray-10);padding:8px 0;}
+  header{padding:14px 16px;flex-wrap:wrap;}
+  header .title{font-size:15px;}
+  main{padding:12px;}
+  .section{padding:13px;}
+}
 .picker{padding:60px 18px;text-align:center;max-width:340px;margin:0 auto;}
 .picker h1{font-size:18px;margin-bottom:24px;}
 .pin-dots{display:flex;justify-content:center;gap:9px;margin-bottom:10px;}
@@ -317,10 +330,10 @@ function renderItemsTab(){
         <tbody>
           ${ITEMS_ALL.map((it,idx)=>`
             <tr>
-              <td>${idx+1}</td>
-              <td><input type="text" class="item-name-input" value="${it.name}" onchange="renameItem(${it.id}, this.value)"></td>
-              <td>${it.active ? '<span class="badge" style="background:var(--ok)">啟用</span>' : '<span class="badge">停用</span>'}</td>
-              <td>
+              <td data-label="序">${idx+1}</td>
+              <td data-label="品項名稱"><input type="text" class="item-name-input" value="${it.name}" onchange="renameItem(${it.id}, this.value)"></td>
+              <td data-label="狀態">${it.active ? '<span class="badge" style="background:var(--ok)">啟用</span>' : '<span class="badge">停用</span>'}</td>
+              <td data-label="操作" style="flex-wrap:wrap;justify-content:flex-end;">
                 <button class="btn-outline" onclick="moveItem(${it.id},-1)">↑</button>
                 <button class="btn-outline" onclick="moveItem(${it.id},1)">↓</button>
                 <button class="btn-outline" onclick="toggleItemActive(${it.id}, ${!it.active})">${it.active?'停用':'啟用'}</button>
@@ -476,14 +489,14 @@ function renderReturnHistory(){
     <tbody>
       ${sorted.map(r=>`
         <tr>
-          <td>${storeName(r.store_id)}</td>
-          <td>${itemName(r.item_id)}</td>
-          <td>${r.quantity}</td>
-          <td>${r.roast_date}</td>
-          <td>${r.factory_decision||'—'}${r.decision_note?'（'+r.decision_note+'）':''}</td>
-          <td>${r.status==='pending' ? '<span class="status-pill status-pending">待門店完成</span>' : '<span class="status-pill status-decided">已完成</span>'}</td>
-          <td>${r.completed_by||'—'}</td>
-          <td>${fmtDT(new Date(r.submitted_at).getTime())}</td>
+          <td data-label="門店">${storeName(r.store_id)}</td>
+          <td data-label="品項">${itemName(r.item_id)}</td>
+          <td data-label="數量">${r.quantity}</td>
+          <td data-label="烘焙日期">${r.roast_date}</td>
+          <td data-label="工廠處置">${r.factory_decision||'—'}${r.decision_note?'（'+r.decision_note+'）':''}</td>
+          <td data-label="狀態">${r.status==='pending' ? '<span class="status-pill status-pending">待門店完成</span>' : '<span class="status-pill status-decided">已完成</span>'}</td>
+          <td data-label="完成人">${r.completed_by||'—'}</td>
+          <td data-label="發起時間">${fmtDT(new Date(r.submitted_at).getTime())}</td>
         </tr>`).join('')}
     </tbody>
   </table>`;
@@ -519,7 +532,7 @@ function renderAlertBatchLine(b){
   </div>`;
 }
 function allocRowHtml(batchId, decision, qty, note){
-  return `<div class="alloc-row" style="display:flex;gap:4px;align-items:center;margin-bottom:4px;">
+  return `<div class="alloc-row" style="display:flex;gap:4px;align-items:center;margin-bottom:4px;flex-wrap:wrap;">
     <select class="alloc-decision">${DECISIONS.map(d=>`<option ${d===decision?'selected':''}>${d}</option>`).join('')}</select>
     <input type="number" class="alloc-qty mini-input" min="0" value="${qty}" oninput="updateAllocTotal(${batchId})">
     <input type="text" class="alloc-note mini-input" style="width:90px" placeholder="備註" value="${note}">
