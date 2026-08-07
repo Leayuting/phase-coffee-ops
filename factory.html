@@ -411,7 +411,7 @@ function renderAlertTab(){
       <div class="legend">
         <span><i style="background:var(--yellow-bd)"></i>烘焙14–20天</span>
         <span><i style="background:var(--red-bd)"></i>烘焙21天以上</span>
-        <span><i style="background:var(--warn)"></i>回收處理中（待決策）</span>
+        <span><i style="background:var(--warn)"></i>已通知門店，待完成</span>
       </div>
       ${order.length ? order.map(itemId=>`
         <div class="item-block">
@@ -432,26 +432,42 @@ function renderAlertBatchLine(b){
   const age = ageDaysOf(b.roast_date, Date.now());
   let cls = '';
   if (age>=21) cls='age-red'; else if (age>=14) cls='age-yellow';
-  if (b.status==='return_pending') cls += ' pending';
-  const ret = RETURNS.find(r=>r.batch_id===b.id && r.status==='pending');
+  if (b.status==='return_pending'){
+    cls += ' pending';
+    return `<div class="batch-line ${cls}">
+      ${b.roast_date}（${age}天）× ${b.quantity}
+      <div style="margin-top:4px;color:var(--gray-70);font-size:12px;">已通知門店：${b.disposal_action||''}${b.disposal_note?'（'+b.disposal_note+'）':''}，待門店完成</div>
+    </div>`;
+  }
   return `<div class="batch-line ${cls}">
     ${b.roast_date}（${age}天）× ${b.quantity}
-    ${b.status==='return_pending' ? `
-      <div class="decision-row">
-        <select id="decision-${b.id}">${DECISIONS.map(d=>`<option>${d}</option>`).join('')}</select>
-        <input type="text" id="note-${b.id}" class="mini-input" style="width:110px" placeholder="備註">
-        <button class="btn-sm" onclick="resolveReturn(${b.id}, ${ret?ret.id:'null'})">確認處置</button>
-      </div>` : ''}
+    <button class="btn-sm" style="margin-left:6px;" onclick="toggleRecallForm(${b.id})">發起回收</button>
+    <div class="decision-row" id="recall-form-${b.id}" style="display:none;">
+      <select id="decision-${b.id}">${DECISIONS.map(d=>`<option>${d}</option>`).join('')}</select>
+      <input type="text" id="note-${b.id}" class="mini-input" style="width:110px" placeholder="備註">
+      <button class="btn-sm" onclick="initiateRecall(${b.id})">通知門店</button>
+    </div>
   </div>`;
 }
-async function resolveReturn(batchId, returnId){
+function toggleRecallForm(batchId){
+  const el = document.getElementById('recall-form-'+batchId);
+  if (el) el.style.display = el.style.display==='none' ? 'flex' : 'none';
+}
+async function initiateRecall(batchId){
+  const b = BATCHES.find(x=>x.id===batchId);
+  if (!b) return;
   const decision = document.getElementById('decision-'+batchId).value;
   const note = document.getElementById('note-'+batchId).value.trim();
-  await sb.from('batches').update({ status:'disposed', disposal_action:decision, disposal_note:note, updated_at:new Date().toISOString() }).eq('id', batchId);
-  if (returnId){
-    await sb.from('returns').update({ status:'decided', factory_decision:decision, decision_note:note, decided_at:new Date().toISOString() }).eq('id', returnId);
-  }
-  toast('已確認處置'); loadAll();
+  const { error:e1 } = await sb.from('batches').update({
+    status:'return_pending', disposal_action:decision, disposal_note:note, updated_at:new Date().toISOString()
+  }).eq('id', batchId);
+  if (e1){ toast('通知失敗：'+e1.message); return; }
+  const { error:e2 } = await sb.from('returns').insert({
+    batch_id:b.id, store_id:b.store_id, item_id:b.item_id, quantity:b.quantity, roast_date:b.roast_date,
+    factory_decision:decision, decision_note:note, status:'pending'
+  });
+  if (e2){ toast('通知失敗：'+e2.message); return; }
+  toast('已通知門店'); loadAll();
 }
 
 // ══════════ 下單彙總（retail / brew） ══════════
