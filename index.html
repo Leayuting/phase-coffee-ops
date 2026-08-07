@@ -593,15 +593,20 @@ function groupedStockHtml(batchList, allowTransferRequest){
     if (!rows.length) return '';
     return `<div class="item-group">
       <div class="item-group-title">${TYPE_LABEL[ch]}</div>
+      ${ch==='retail' ? `<div class="legend"><span><i style="background:#e8c43a"></i>烘焙14–20天</span><span><i style="background:#c0453a"></i>烘焙21天以上</span></div>` : ''}
       <table>
         <thead><tr><th>品項</th><th>日期</th><th>包數</th><th></th></tr></thead>
-        <tbody>${rows.map(b=>`
-          <tr>
+        <tbody>${rows.map(b=>{
+          const age = ageDaysOf(b.roast_date, Date.now());
+          let ageCls = '';
+          if (ch==='retail'){ if (age>=21) ageCls='batch-row age-red'; else if (age>=14) ageCls='batch-row age-yellow'; }
+          return `<tr class="${ageCls}">
             <td data-label="品項">${itemName(b.item_id)}</td>
-            <td data-label="日期">${b.roast_date}</td>
+            <td data-label="日期">${b.roast_date}（${age}天）</td>
             <td data-label="包數">${b.quantity}</td>
             <td data-label="">${allowTransferRequest ? `<button class="btn-sm" onclick="openTransferRequestModal(${b.id})">申請調貨</button>` : ''}</td>
-          </tr>`).join('')}</tbody>
+          </tr>`;
+        }).join('')}</tbody>
       </table>
     </div>`;
   }).join('') || `<div class="empty-msg">目前沒有庫存資料</div>`;
