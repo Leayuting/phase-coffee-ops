@@ -26,6 +26,7 @@ body{font-family:var(--font);background:var(--gray-08);color:var(--black);font-s
 header{background:var(--black);color:var(--white);padding:16px 18px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:50;}
 header .store-name{font-size:18px;font-weight:600;letter-spacing:.02em;}
 header .sync{margin-left:auto;font-size:11px;color:var(--gray-50);white-space:nowrap;}
+.recall-banner{background:var(--danger);color:#fff;font-size:13.5px;font-weight:600;padding:10px 16px;text-align:center;cursor:pointer;}
 .tabs{display:flex;background:#fff;border-bottom:1px solid var(--gray-20);position:sticky;top:56px;z-index:49;}
 .tab-btn{flex:1;padding:13px 8px;border:none;background:none;font-size:14.5px;font-weight:600;color:var(--gray-50);border-bottom:3px solid transparent;font-family:inherit;}
 .tab-btn.active{color:var(--black);border-bottom-color:var(--accent);}
@@ -119,6 +120,7 @@ main{max-width:640px;margin:0 auto;}
       </div>
     </div>
   </header>
+  <div id="recallBanner" class="recall-banner" style="display:none;" onclick="openRecallModal()"></div>
   <div class="tabs">
     <button class="tab-btn active" data-tab="retail" onclick="switchTab('retail')">架上販售豆</button>
     <button class="tab-btn" data-tab="brew" onclick="switchTab('brew')">門市沖煮豆</button>
@@ -366,6 +368,43 @@ function switchTab(tab){
 // ══════════ RENDER ══════════
 function render(){
   ['retail','brew'].forEach(renderTab);
+  checkRecallNotifications();
+}
+
+// ══════════ 工廠回收指示通知 ══════════
+let notifiedReturnIds = new Set();
+function pendingReturns(){ return RETURNS.filter(r=>r.status==='pending'); }
+function checkRecallNotifications(){
+  const pending = pendingReturns();
+  const banner = document.getElementById('recallBanner');
+  if (pending.length){
+    banner.style.display = 'block';
+    banner.textContent = `⚠ 有 ${pending.length} 筆工廠回收指示待完成，點此查看`;
+  } else {
+    banner.style.display = 'none';
+  }
+  const newOnes = pending.filter(r=>!notifiedReturnIds.has(r.id));
+  if (newOnes.length){
+    newOnes.forEach(r=>notifiedReturnIds.add(r.id));
+    openRecallModal();
+  }
+}
+function openRecallModal(){
+  const pending = pendingReturns();
+  if (!pending.length){ closeModal(); return; }
+  openModal(`
+    <h3>工廠回收指示</h3>
+    <div id="recallModalList">${pending.map(r=>`
+      <div class="addon-item" id="recall-item-${r.id}">
+        <div>${itemName(r.item_id)} × ${r.quantity}（烘焙 ${r.roast_date}）<br>
+          <span style="color:var(--gray-50)">工廠處置：${r.factory_decision||'—'}${r.decision_note ? '（'+r.decision_note+'）' : ''}</span></div>
+        <button class="btn-sm" onclick="markReturnDoneFromModal(${r.id}, ${r.batch_id})">標記完成</button>
+      </div>`).join('')}</div>
+    <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">稍後再處理</button></div>`);
+}
+async function markReturnDoneFromModal(returnId, batchId){
+  await markReturnDone(returnId, batchId);
+  if (!pendingReturns().length) closeModal(); else openRecallModal();
 }
 
 function renderTab(type){
@@ -494,7 +533,7 @@ async function markReturnDone(returnId, batchId){
     const { error:e2 } = await sb.from('batches').update({ status:'disposed', updated_at:new Date().toISOString() }).eq('id', batchId);
     if (e2){ toast('更新失敗：'+e2.message); return; }
   }
-  toast('已標記完成'); loadAll();
+  toast('已標記完成'); await loadAll();
 }
 
 // ══════════ MODALS ══════════
