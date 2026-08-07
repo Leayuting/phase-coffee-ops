@@ -327,17 +327,30 @@ async function syncItemsFromBeansDB(){
   if (itemsSyncing) return;
   itemsSyncing = true;
   try{
-    const { data, error } = await beansSb.from('beans').select('name_zh').is('deleted_at', null).is('delisted_at', null);
+    const { data, error } = await beansSb.from('beans').select('name_zh, category_code').is('deleted_at', null).is('delisted_at', null);
     if (error || !data) return;
+    const byName = {};
+    data.forEach(b=>{ if (b.name_zh && !byName[b.name_zh]) byName[b.name_zh] = b.category_code || null; });
+
     const existingNames = new Set(ITEMS_ALL.map(i=>i.name));
-    const newNames = [...new Set(data.map(b=>b.name_zh).filter(Boolean))].filter(n=>!existingNames.has(n));
-    if (!newNames.length) return;
-    const maxSort = Math.max(0, ...ITEMS_ALL.map(i=>i.sort_order));
-    const rows = newNames.map((name, idx) => ({ name, active:true, sort_order: maxSort+1+idx }));
-    const { error:e2 } = await sb.from('items').insert(rows);
-    if (e2){ console.error(e2); return; }
-    toast(`已從咖啡豆資料庫同步 ${newNames.length} 個新品項`);
-    loadAll();
+    const newNames = Object.keys(byName).filter(n=>!existingNames.has(n));
+    let addedCount = 0;
+    if (newNames.length){
+      const maxSort = Math.max(0, ...ITEMS_ALL.map(i=>i.sort_order));
+      const rows = newNames.map((name, idx) => ({ name, active:true, sort_order: maxSort+1+idx, category_code: byName[name] }));
+      const { error:e2 } = await sb.from('items').insert(rows);
+      if (!e2) addedCount = newNames.length; else console.error(e2);
+    }
+
+    const toBackfill = ITEMS_ALL.filter(it => !it.category_code && byName[it.name]);
+    for (const it of toBackfill){
+      await sb.from('items').update({ category_code: byName[it.name] }).eq('id', it.id);
+    }
+
+    if (addedCount || toBackfill.length){
+      toast(`已從咖啡豆資料庫同步：新增 ${addedCount} 個品項，補上 ${toBackfill.length} 個分類`);
+      loadAll();
+    }
   }catch(e){ console.error(e); }
   finally{ itemsSyncing = false; }
 }
@@ -356,8 +369,65 @@ function itemName(id){ const it = ITEMS_ALL.find(i=>i.id===id); return it ? it.n
 function storeName(id){ const s = STORES.find(x=>x.id===id); return s ? s.name : id; }
 
 // ══════════ 品項管理 ══════════
+const CAT_META = {
+  G: { zh:'蜜處理・日曬', color:'#b0b0b0', light:'#e8e8e8', text:'var(--black)' },
+  Y: { zh:'水洗',         color:'#e8c43a', light:'#fef7d4', text:'var(--black)' },
+  P: { zh:'自然發酵',     color:'#d47a7a', light:'#faeaea', text:'#fff' },
+  R: { zh:'特殊發酵',     color:'#8a1a1a', light:'#f5e0e0', text:'#fff' },
+  B: { zh:'堅果奶油',     color:'#5a2e0e', light:'#f0e8e0', text:'#fff' },
+  T: { zh:'台灣競標',     color:'#009ba8', light:'#e0f5f7', text:'#fff' },
+  X: { zh:'配方豆',       color:'#555555', light:'#ebebeb', text:'#fff' },
+  O: { zh:'其他',         color:'#4a7c6f', light:'#e8f2f0', text:'#fff' },
+};
+const CAT_ORDER = ['G','Y','P','R','B','T','X','O'];
+let itemViewMode = 'category';
+function itemCategoryOptions(selected){
+  return `<option value="" ${!selected?'selected':''}>未分類</option>` +
+    CAT_ORDER.map(c=>`<option value="${c}" ${selected===c?'selected':''}>${CAT_META[c].zh}</option>`).join('');
+}
+function itemRowHtml(it, idx){
+  return `<tr>
+    <td data-label="序">${idx+1}</td>
+    <td data-label="品項名稱"><input type="text" class="item-name-input" value="${it.name}" onchange="renameItem(${it.id}, this.value)"></td>
+    <td data-label="分類"><select onchange="setItemCategory(${it.id}, this.value)">${itemCategoryOptions(it.category_code)}</select></td>
+    <td data-label="狀態">${it.active ? '<span class="badge" style="background:var(--ok)">啟用</span>' : '<span class="badge">停用</span>'}</td>
+    <td data-label="操作" style="flex-wrap:wrap;justify-content:flex-end;">
+      <button class="btn-outline" onclick="moveItem(${it.id},-1)">↑</button>
+      <button class="btn-outline" onclick="moveItem(${it.id},1)">↓</button>
+      <button class="btn-outline" onclick="toggleItemActive(${it.id}, ${!it.active})">${it.active?'停用':'啟用'}</button>
+      <button class="btn-danger" onclick="deleteItem(${it.id}, '${it.name.replace(/'/g,"\\'")}')">刪除</button>
+    </td>
+  </tr>`;
+}
 function renderItemsTab(){
   const el = document.getElementById('tab-items');
+  const idxOf = it => ITEMS_ALL.indexOf(it);
+
+  let listHtml;
+  if (itemViewMode === 'flat'){
+    listHtml = `<table>
+      <thead><tr><th style="width:36px"></th><th>品項名稱</th><th style="width:110px">分類</th><th style="width:70px">狀態</th><th style="width:220px"></th></tr></thead>
+      <tbody>${ITEMS_ALL.map(it=>itemRowHtml(it, idxOf(it))).join('')}</tbody>
+    </table>`;
+  } else {
+    const groups = {};
+    ITEMS_ALL.forEach(it=>{ const c = it.category_code || ''; (groups[c] ||= []).push(it); });
+    const codes = [...CAT_ORDER, ''].filter(c=>groups[c] && groups[c].length);
+    listHtml = codes.map(c=>{
+      const meta = c ? CAT_META[c] : { zh:'未分類', color:'var(--gray-30)', text:'#fff' };
+      const rows = groups[c];
+      return `<details open style="margin-bottom:8px;border:1px solid var(--gray-08);border-radius:6px;overflow:hidden;">
+        <summary style="background:${meta.color};color:${meta.text};padding:9px 12px;font-weight:700;cursor:pointer;list-style:none;">
+          ${meta.zh}（${rows.length}）
+        </summary>
+        <table>
+          <thead><tr><th style="width:36px"></th><th>品項名稱</th><th style="width:110px">分類</th><th style="width:70px">狀態</th><th style="width:220px"></th></tr></thead>
+          <tbody>${rows.map(it=>itemRowHtml(it, idxOf(it))).join('')}</tbody>
+        </table>
+      </details>`;
+    }).join('');
+  }
+
   el.innerHTML = `
     <div class="section">
       <h2>新增品項</h2>
@@ -367,25 +437,22 @@ function renderItemsTab(){
       </div>
     </div>
     <div class="section">
-      <h2>品項清單（共 ${ITEMS_ALL.length} 項，啟用 ${ITEMS.length} 項）</h2>
-      <table>
-        <thead><tr><th style="width:36px"></th><th>品項名稱</th><th style="width:70px">狀態</th><th style="width:220px"></th></tr></thead>
-        <tbody>
-          ${ITEMS_ALL.map((it,idx)=>`
-            <tr>
-              <td data-label="序">${idx+1}</td>
-              <td data-label="品項名稱"><input type="text" class="item-name-input" value="${it.name}" onchange="renameItem(${it.id}, this.value)"></td>
-              <td data-label="狀態">${it.active ? '<span class="badge" style="background:var(--ok)">啟用</span>' : '<span class="badge">停用</span>'}</td>
-              <td data-label="操作" style="flex-wrap:wrap;justify-content:flex-end;">
-                <button class="btn-outline" onclick="moveItem(${it.id},-1)">↑</button>
-                <button class="btn-outline" onclick="moveItem(${it.id},1)">↓</button>
-                <button class="btn-outline" onclick="toggleItemActive(${it.id}, ${!it.active})">${it.active?'停用':'啟用'}</button>
-                <button class="btn-danger" onclick="deleteItem(${it.id}, '${it.name.replace(/'/g,"\\'")}')">刪除</button>
-              </td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
+      <h2>品項清單（共 ${ITEMS_ALL.length} 項，啟用 ${ITEMS.length} 項）
+        <span>
+          <button class="btn-outline" style="${itemViewMode==='category'?'background:var(--black);color:#fff;':''}" onclick="setItemViewMode('category')">分類檢視</button>
+          <button class="btn-outline" style="${itemViewMode==='flat'?'background:var(--black);color:#fff;':''}" onclick="setItemViewMode('flat')">全部品項</button>
+        </span>
+      </h2>
+      ${listHtml}
     </div>`;
+}
+function setItemViewMode(mode){
+  itemViewMode = mode;
+  renderItemsTab();
+}
+async function setItemCategory(id, code){
+  await sb.from('items').update({ category_code: code || null }).eq('id', id);
+  toast('已更新分類'); loadAll();
 }
 async function addItem(){
   const input = document.getElementById('newItemName');
