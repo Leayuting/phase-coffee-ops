@@ -447,9 +447,16 @@ function renderTab(type){
   `;
 }
 
+function agePriority(b, type){
+  if (type!=='retail') return 0;
+  const age = ageDaysOf(b.roast_date, Date.now());
+  if (age>=21) return 2;
+  if (age>=14) return 1;
+  return 0;
+}
 function renderBatchList(type){
   const rows = BATCHES.filter(b=>b.channel===type)
-    .sort((a,b)=> itemName(a.item_id).localeCompare(itemName(b.item_id)) || a.roast_date.localeCompare(b.roast_date));
+    .sort((a,b)=> agePriority(b,type)-agePriority(a,type) || itemName(a.item_id).localeCompare(itemName(b.item_id)) || a.roast_date.localeCompare(b.roast_date));
   if (!rows.length) return `<div class="empty-msg">目前沒有登記中的批次</div>`;
   return `<table>
     <thead><tr><th>品項</th><th>日期</th><th>包數</th></tr></thead>
@@ -589,7 +596,7 @@ function groupedStockHtml(batchList, allowTransferRequest){
   if (!batchList.length) return `<div class="empty-msg">目前沒有庫存資料</div>`;
   return ['retail','brew','filter'].map(ch=>{
     const rows = batchList.filter(b=>b.channel===ch)
-      .sort((a,b)=> itemName(a.item_id).localeCompare(itemName(b.item_id)) || a.roast_date.localeCompare(b.roast_date));
+      .sort((a,b)=> agePriority(b,ch)-agePriority(a,ch) || itemName(a.item_id).localeCompare(itemName(b.item_id)) || a.roast_date.localeCompare(b.roast_date));
     if (!rows.length) return '';
     return `<div class="item-group">
       <div class="item-group-title">${TYPE_LABEL[ch]}</div>
