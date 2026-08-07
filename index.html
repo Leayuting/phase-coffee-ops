@@ -269,18 +269,34 @@ function enterStore(storeId){
 }
 
 // ══════════ 盤點負責人 ══════════
+// 一天當中可能換不同人操作，姓名不能無限期記住——超過 IDLE_LIMIT 沒有任何庫存異動
+// 就視為換人，下次異動要重新輸入姓名（每次成功異動都會刷新時間，連續操作不會被打斷）。
+const COUNTER_IDLE_LIMIT_MS = 20 * 60 * 1000; // 20 分鐘
 let counterName = null, pendingCounterCallback = null;
 function counterKey(){ return 'phase_coffee_counter_'+STORE_ID; }
 function loadCounterName(){
-  counterName = localStorage.getItem(counterKey()) || null;
+  refreshCounterFromStorage();
   renderCounterBar();
+}
+function refreshCounterFromStorage(){
+  try{
+    const raw = localStorage.getItem(counterKey());
+    if (!raw){ counterName = null; return; }
+    const { name, ts } = JSON.parse(raw);
+    counterName = (name && Date.now()-ts < COUNTER_IDLE_LIMIT_MS) ? name : null;
+  }catch(e){ counterName = null; }
+}
+function touchCounterTimestamp(){
+  if (!counterName) return;
+  localStorage.setItem(counterKey(), JSON.stringify({ name:counterName, ts:Date.now() }));
 }
 function renderCounterBar(){
   const el = document.getElementById('counterBar');
   el.textContent = counterName ? `盤點人：${counterName}（點此更換）` : '尚未設定盤點人，點此設定';
 }
 function ensureCounterName(onReady){
-  if (counterName){ onReady(); return; }
+  refreshCounterFromStorage();
+  if (counterName){ touchCounterTimestamp(); renderCounterBar(); onReady(); return; }
   pendingCounterCallback = onReady;
   openCounterNameModal();
 }
@@ -298,7 +314,7 @@ function confirmCounterName(){
   const name = document.getElementById('counterNameInput').value.trim();
   if (!name){ toast('請輸入姓名'); return; }
   counterName = name;
-  localStorage.setItem(counterKey(), name);
+  localStorage.setItem(counterKey(), JSON.stringify({ name, ts:Date.now() }));
   renderCounterBar();
   closeModal();
   if (pendingCounterCallback){ const cb = pendingCounterCallback; pendingCounterCallback = null; cb(); }
