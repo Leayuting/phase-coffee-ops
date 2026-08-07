@@ -73,7 +73,6 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
 .status-rejected{background:var(--red-bg);color:var(--danger);}
 .addon-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--gray-08);flex-wrap:wrap;}
 .addon-row:first-child{border-top:none;}
-.decision-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px;}
 @media (max-width:800px){ .grid3{grid-template-columns:1fr;} table,thead,tbody,tr{display:block;} th{display:none;} td{display:flex;justify-content:space-between;border:none;padding:4px 0;} tr{border-bottom:1px solid var(--gray-10);padding:8px 0;} }
 .picker{padding:60px 18px;text-align:center;max-width:340px;margin:0 auto;}
 .picker h1{font-size:18px;margin-bottom:24px;}
@@ -466,31 +465,86 @@ function renderAlertBatchLine(b){
   return `<div class="batch-line ${cls}">
     ${b.roast_date}（${age}天）× ${b.quantity}
     <button class="btn-sm" style="margin-left:6px;" onclick="toggleRecallForm(${b.id})">發起回收</button>
-    <div class="decision-row" id="recall-form-${b.id}" style="display:none;">
-      <select id="decision-${b.id}">${DECISIONS.map(d=>`<option>${d}</option>`).join('')}</select>
-      <input type="text" id="note-${b.id}" class="mini-input" style="width:110px" placeholder="備註">
-      <button class="btn-sm" onclick="initiateRecall(${b.id})">通知門店</button>
+    <div id="recall-form-${b.id}" style="display:none;margin-top:6px;">
+      <div id="alloc-rows-${b.id}">${allocRowHtml(b.id, DECISIONS[0], b.quantity, '')}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+        <button class="btn-outline" onclick="addAllocRow(${b.id})">＋ 分拆一筆</button>
+        <span class="alloc-total" id="alloc-total-${b.id}"></span>
+      </div>
+      <button class="btn-sm" style="margin-top:6px;" onclick="initiateRecall(${b.id})">通知門店</button>
     </div>
+  </div>`;
+}
+function allocRowHtml(batchId, decision, qty, note){
+  return `<div class="alloc-row" style="display:flex;gap:4px;align-items:center;margin-bottom:4px;">
+    <select class="alloc-decision">${DECISIONS.map(d=>`<option ${d===decision?'selected':''}>${d}</option>`).join('')}</select>
+    <input type="number" class="alloc-qty mini-input" min="0" value="${qty}" oninput="updateAllocTotal(${batchId})">
+    <input type="text" class="alloc-note mini-input" style="width:90px" placeholder="備註" value="${note}">
+    <button class="btn-outline" onclick="removeAllocRow(this, ${batchId})">✕</button>
   </div>`;
 }
 function toggleRecallForm(batchId){
   const el = document.getElementById('recall-form-'+batchId);
-  if (el) el.style.display = el.style.display==='none' ? 'flex' : 'none';
+  if (el){ el.style.display = el.style.display==='none' ? 'block' : 'none'; updateAllocTotal(batchId); }
+}
+function addAllocRow(batchId){
+  const b = BATCHES.find(x=>x.id===batchId);
+  const container = document.getElementById('alloc-rows-'+batchId);
+  const allocated = sumAllocQty(batchId);
+  const remain = Math.max(0, (b?.quantity||0) - allocated);
+  container.insertAdjacentHTML('beforeend', allocRowHtml(batchId, DECISIONS[0], remain, ''));
+  updateAllocTotal(batchId);
+}
+function removeAllocRow(btn, batchId){
+  btn.closest('.alloc-row').remove();
+  updateAllocTotal(batchId);
+}
+function sumAllocQty(batchId){
+  const container = document.getElementById('alloc-rows-'+batchId);
+  let sum = 0;
+  container.querySelectorAll('.alloc-qty').forEach(inp=>{ sum += Number(inp.value||0); });
+  return sum;
+}
+function updateAllocTotal(batchId){
+  const b = BATCHES.find(x=>x.id===batchId);
+  const target = b ? b.quantity : 0;
+  const sum = sumAllocQty(batchId);
+  const el = document.getElementById('alloc-total-'+batchId);
+  if (!el) return;
+  const ok = sum === target;
+  el.textContent = `已分配 ${sum} / 總量 ${target}`;
+  el.style.color = ok ? 'var(--ok)' : 'var(--danger)';
+  el.style.fontWeight = '600';
 }
 async function initiateRecall(batchId){
   const b = BATCHES.find(x=>x.id===batchId);
   if (!b) return;
-  const decision = document.getElementById('decision-'+batchId).value;
-  const note = document.getElementById('note-'+batchId).value.trim();
-  const { error:e1 } = await sb.from('batches').update({
-    status:'return_pending', disposal_action:decision, disposal_note:note, updated_at:new Date().toISOString()
-  }).eq('id', batchId);
-  if (e1){ toast('通知失敗：'+e1.message); return; }
-  const { error:e2 } = await sb.from('returns').insert({
-    batch_id:b.id, store_id:b.store_id, item_id:b.item_id, quantity:b.quantity, roast_date:b.roast_date,
-    factory_decision:decision, decision_note:note, status:'pending'
+  const container = document.getElementById('alloc-rows-'+batchId);
+  const allocations = [];
+  container.querySelectorAll('.alloc-row').forEach(row=>{
+    const decision = row.querySelector('.alloc-decision').value;
+    const qty = Number(row.querySelector('.alloc-qty').value||0);
+    const note = row.querySelector('.alloc-note').value.trim();
+    if (qty>0) allocations.push({ decision, qty, note });
   });
-  if (e2){ toast('通知失敗：'+e2.message); return; }
+  const total = allocations.reduce((s,a)=>s+a.qty,0);
+  if (!allocations.length || total !== b.quantity){
+    toast(`分配總數需等於批次總量 ${b.quantity}（目前 ${total}）`); return;
+  }
+  for (const a of allocations){
+    const { data:newBatch, error:e1 } = await sb.from('batches').insert({
+      store_id:b.store_id, item_id:b.item_id, channel:b.channel, roast_date:b.roast_date,
+      quantity:a.qty, status:'return_pending', disposal_action:a.decision, disposal_note:a.note, source:b.source
+    }).select().single();
+    if (e1){ toast('通知失敗：'+e1.message); return; }
+    const { error:e2 } = await sb.from('returns').insert({
+      batch_id:newBatch.id, store_id:b.store_id, item_id:b.item_id, quantity:a.qty, roast_date:b.roast_date,
+      factory_decision:a.decision, decision_note:a.note, status:'pending'
+    });
+    if (e2){ toast('通知失敗：'+e2.message); return; }
+  }
+  const { error:e3 } = await sb.from('batches').delete().eq('id', batchId);
+  if (e3){ toast('通知失敗（分批已建立，但原批次未清除）：'+e3.message); return; }
   toast('已通知門店'); loadAll();
 }
 
