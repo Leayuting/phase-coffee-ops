@@ -48,6 +48,8 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
 .item-name-input:focus{border-color:var(--gray-20);background:#fff;}
 .empty-msg{color:var(--gray-50);font-size:13px;padding:10px 2px;}
 .badge{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:var(--gray-30);color:#fff;}
+.drag-handle{cursor:grab;text-align:center;color:var(--gray-50);touch-action:none;user-select:none;font-size:15px;letter-spacing:-1px;}
+tr[data-item-id].dragging{opacity:.4;background:var(--gray-08);}
 .legend{font-size:11.5px;color:var(--gray-50);margin-bottom:10px;display:flex;gap:14px;flex-wrap:wrap;}
 .legend span{display:inline-flex;align-items:center;gap:4px;}
 .legend i{width:9px;height:9px;border-radius:2px;display:inline-block;}
@@ -74,7 +76,8 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
 .modal h3{font-size:16px;margin-bottom:14px;}
 .field{margin-bottom:12px;}
 .field label{display:block;font-size:12.5px;color:var(--gray-70);margin-bottom:4px;font-weight:600;}
-.field select,.field input,.field textarea{width:100%;padding:9px 10px;border:1px solid var(--gray-20);border-radius:6px;font-size:14.5px;font-family:inherit;}
+.field select,.field input:not([type=checkbox]):not([type=radio]),.field textarea{width:100%;padding:9px 10px;border:1px solid var(--gray-20);border-radius:6px;font-size:14.5px;font-family:inherit;}
+.field input[type=checkbox],.field input[type=radio]{width:auto;flex-shrink:0;}
 .modal-actions{display:flex;gap:8px;margin-top:16px;}
 .modal-actions .btn,.modal-actions .btn-outline{flex:1;text-align:center;}
 @media (max-width:800px){
@@ -387,15 +390,13 @@ function itemCategoryOptions(selected){
   return `<option value="" ${!selected?'selected':''}>未分類</option>` +
     CAT_ORDER.map(c=>`<option value="${c}" ${selected===c?'selected':''}>${CAT_META[c].zh}</option>`).join('');
 }
-function itemRowHtml(it, idx){
-  return `<tr>
-    <td data-label="序">${idx+1}</td>
+function itemRowHtml(it){
+  return `<tr data-item-id="${it.id}">
+    <td data-label="" class="drag-handle" onpointerdown="onItemDragStart(event, this.closest('tr'))">⋮⋮</td>
     <td data-label="品項名稱"><input type="text" class="item-name-input" value="${it.name}" onchange="renameItem(${it.id}, this.value)"></td>
     <td data-label="分類"><select onchange="setItemCategory(${it.id}, this.value)">${itemCategoryOptions(it.category_code)}</select></td>
     <td data-label="狀態">${it.active ? '<span class="badge" style="background:var(--ok)">啟用</span>' : '<span class="badge">停用</span>'}</td>
     <td data-label="操作" style="flex-wrap:wrap;justify-content:flex-end;">
-      <button class="btn-outline" onclick="moveItem(${it.id},-1)">↑</button>
-      <button class="btn-outline" onclick="moveItem(${it.id},1)">↓</button>
       <button class="btn-outline" onclick="toggleItemActive(${it.id}, ${!it.active})">${it.active?'停用':'啟用'}</button>
       <button class="btn-danger" onclick="deleteItem(${it.id}, '${it.name.replace(/'/g,"\\'")}')">刪除</button>
     </td>
@@ -403,13 +404,12 @@ function itemRowHtml(it, idx){
 }
 function renderItemsTab(){
   const el = document.getElementById('tab-items');
-  const idxOf = it => ITEMS_ALL.indexOf(it);
 
   let listHtml;
   if (itemViewMode === 'flat'){
     listHtml = `<table>
-      <thead><tr><th style="width:36px"></th><th>品項名稱</th><th style="width:110px">分類</th><th style="width:70px">狀態</th><th style="width:220px"></th></tr></thead>
-      <tbody>${ITEMS_ALL.map(it=>itemRowHtml(it, idxOf(it))).join('')}</tbody>
+      <thead><tr><th style="width:32px"></th><th>品項名稱</th><th style="width:110px">分類</th><th style="width:70px">狀態</th><th style="width:220px"></th></tr></thead>
+      <tbody>${ITEMS_ALL.map(it=>itemRowHtml(it)).join('')}</tbody>
     </table>`;
   } else {
     const groups = {};
@@ -423,8 +423,8 @@ function renderItemsTab(){
           ${meta.zh}（${rows.length}）
         </summary>
         <table>
-          <thead><tr><th style="width:36px"></th><th>品項名稱</th><th style="width:110px">分類</th><th style="width:70px">狀態</th><th style="width:220px"></th></tr></thead>
-          <tbody>${rows.map(it=>itemRowHtml(it, idxOf(it))).join('')}</tbody>
+          <thead><tr><th style="width:32px"></th><th>品項名稱</th><th style="width:110px">分類</th><th style="width:70px">狀態</th><th style="width:220px"></th></tr></thead>
+          <tbody>${rows.map(it=>itemRowHtml(it)).join('')}</tbody>
         </table>
       </details>`;
     }).join('');
@@ -484,15 +484,42 @@ async function deleteItem(id, name){
   }
   toast('已刪除品項'); loadAll();
 }
-async function moveItem(id, dir){
-  const idx = ITEMS_ALL.findIndex(i=>i.id===id);
-  const swapIdx = idx+dir;
-  if (swapIdx<0 || swapIdx>=ITEMS_ALL.length) return;
-  const a = ITEMS_ALL[idx], b = ITEMS_ALL[swapIdx];
-  await Promise.all([
-    sb.from('items').update({ sort_order:b.sort_order }).eq('id', a.id),
-    sb.from('items').update({ sort_order:a.sort_order }).eq('id', b.id)
-  ]);
+let itemDragRow = null, itemDragTbody = null;
+function onItemDragStart(e, row){
+  e.preventDefault();
+  itemDragRow = row;
+  itemDragTbody = row.parentElement;
+  row.classList.add('dragging');
+  document.addEventListener('pointermove', onItemDragMove);
+  document.addEventListener('pointerup', onItemDragEnd);
+}
+function onItemDragMove(e){
+  if (!itemDragRow) return;
+  const rows = Array.from(itemDragTbody.children).filter(r=>r!==itemDragRow);
+  let target = null;
+  for (const r of rows){
+    const rect = r.getBoundingClientRect();
+    if (e.clientY < rect.top + rect.height/2){ target = r; break; }
+  }
+  if (target) itemDragTbody.insertBefore(itemDragRow, target);
+  else itemDragTbody.appendChild(itemDragRow);
+}
+async function onItemDragEnd(){
+  document.removeEventListener('pointermove', onItemDragMove);
+  document.removeEventListener('pointerup', onItemDragEnd);
+  if (!itemDragRow) return;
+  itemDragRow.classList.remove('dragging');
+  const row = itemDragRow;
+  itemDragRow = null; itemDragTbody = null;
+  const rows = Array.from(document.querySelectorAll('#tab-items tr[data-item-id]'));
+  const updates = [];
+  rows.forEach((r, i)=>{
+    const id = Number(r.dataset.itemId);
+    const it = ITEMS_ALL.find(x=>x.id===id);
+    if (it && it.sort_order !== i+1) updates.push({ id, sort_order:i+1 });
+  });
+  if (!updates.length) return;
+  await Promise.all(updates.map(u=>sb.from('items').update({ sort_order:u.sort_order }).eq('id', u.id)));
   loadAll();
 }
 
@@ -784,7 +811,10 @@ function renderAnnouncementHistory(){
     const receipts = RECEIPTS.filter(r=>r.announcement_id===a.id);
     const receivedCount = receipts.filter(r=>r.received_at).length;
     return `<div class="item-block">
-      <div class="item-block-title">${a.title ? a.title+'　' : ''}<span style="font-weight:400;color:var(--gray-50);font-size:12px;">${fmtDT(new Date(a.created_at).getTime())}｜已接收 ${receivedCount}/${receipts.length}</span></div>
+      <div class="item-block-title" style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+        <span>${a.title ? a.title+'　' : ''}<span style="font-weight:400;color:var(--gray-50);font-size:12px;">${fmtDT(new Date(a.created_at).getTime())}｜已接收 ${receivedCount}/${receipts.length}</span></span>
+        <button class="btn-danger" style="flex-shrink:0;" onclick="deleteAnnouncement(${a.id})">刪除</button>
+      </div>
       <div style="font-size:13px;margin-bottom:8px;white-space:pre-wrap;">${a.content}</div>
       <table>
         <thead><tr><th>門店</th><th>狀態</th><th>接收人</th><th>接收時間</th></tr></thead>
@@ -811,6 +841,12 @@ async function publishAnnouncement(){
   const { error:e2 } = await sb.from('announcement_receipts').insert(receiptRows);
   if (e2){ toast('發布失敗：'+e2.message); return; }
   toast('已發布公告'); loadAll();
+}
+async function deleteAnnouncement(id){
+  if (!confirm('確定要刪除這則公告嗎？門店端也會一併移除，此動作無法復原。')) return;
+  const { error } = await sb.from('announcements').delete().eq('id', id);
+  if (error){ toast('刪除失敗：'+error.message); return; }
+  toast('已刪除公告'); loadAll();
 }
 
 // ══════════ 報表 ══════════
