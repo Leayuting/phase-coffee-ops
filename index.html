@@ -358,7 +358,7 @@ function renderTab(type){
   const el = document.getElementById('tab-'+type);
   el.innerHTML = `
     <div class="section">
-      <h2>本店庫存</h2>
+      <h2>本店庫存<button class="btn-sm" onclick="openAddBatchModal('${type}')">＋ 新增庫存</button></h2>
       <div id="${type}-batchList">${renderBatchList(type)}</div>
     </div>
     ${type==='retail' ? `
@@ -392,6 +392,31 @@ async function updateBatchQty(id, val){
   const q = Number(val); if (isNaN(q) || q<0) return;
   await sb.from('batches').update({ quantity:q, updated_at:new Date().toISOString() }).eq('id', id);
   toast('已更新數量');
+}
+function todayStr(){
+  const p = taipeiParts(Date.now());
+  return `${p.y}-${String(p.m+1).padStart(2,'0')}-${String(p.d).padStart(2,'0')}`;
+}
+function openAddBatchModal(type){
+  const opts = ITEMS.map(i=>`<option value="${i.id}">${i.name}</option>`).join('');
+  openModal(`
+    <h3>新增庫存（${type==='retail'?'架上販售豆':'門市沖煮豆'}）</h3>
+    <div class="field"><label>品項</label><select id="nbItem">${opts}</select></div>
+    <div class="field"><label>烘焙日期</label><input type="date" id="nbRoast" value="${todayStr()}"></div>
+    <div class="field"><label>包數</label><input type="number" id="nbQty" min="0" value="1"></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="saveAddBatch('${type}')">新增</button>
+    </div>`);
+}
+async function saveAddBatch(type){
+  const item_id = Number(document.getElementById('nbItem').value);
+  const roast_date = document.getElementById('nbRoast').value;
+  const quantity = Number(document.getElementById('nbQty').value||0);
+  if (!roast_date || quantity<0){ toast('請填寫完整資料'); return; }
+  const { error } = await sb.from('batches').insert({ store_id:STORE_ID, item_id, channel:type, roast_date, quantity, status:'active', source:'manual' });
+  if (error){ toast('新增失敗：'+error.message); return; }
+  closeModal(); toast('已新增庫存'); loadAll();
 }
 
 function renderReturnList(){
