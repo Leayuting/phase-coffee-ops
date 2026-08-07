@@ -35,6 +35,9 @@ main{max-width:640px;margin:0 auto;}
 .tab-panel.active{display:block;}
 .section{background:#fff;border-radius:var(--radius);padding:14px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.05);}
 .section h2{font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.item-group{border-top:1px solid var(--gray-08);padding-top:10px;margin-top:10px;}
+.item-group:first-child{border-top:none;padding-top:0;margin-top:0;}
+.item-group-title{font-weight:700;font-size:14px;margin-bottom:6px;}
 .btn{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:9px 14px;font-size:13.5px;font-weight:600;font-family:inherit;}
 .btn:disabled{background:var(--gray-30);color:var(--gray-50);}
 .btn-sm{background:none;color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:5px 10px;font-size:12.5px;font-weight:600;font-family:inherit;}
@@ -561,14 +564,9 @@ function renderOtherStockTab(){
     el.innerHTML = `
       <div class="section">
         <h2>查看其他門店庫存</h2>
-        <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">僅供查看，無法在此調整其他門店的庫存。</p>
-        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">僅供查看，無法在此調整其他門店的庫存。選擇門店後會整合顯示該店所有頻道的庫存。</p>
+        <div style="margin-bottom:10px;">
           <select id="otherStoreSelect" onchange="loadOtherStock()"><option value="">請選擇門店</option>${storeOpts}</select>
-          <select id="otherChannelSelect" onchange="loadOtherStock()">
-            <option value="retail">架上販售豆</option>
-            <option value="brew">門市沖煮豆</option>
-            <option value="filter">濾掛</option>
-          </select>
         </div>
         <div id="otherStockList"><div class="empty-msg">請先選擇要查看的門店</div></div>
       </div>
@@ -582,26 +580,32 @@ function renderOtherStockTab(){
 }
 async function loadOtherStock(){
   const storeId = document.getElementById('otherStoreSelect').value;
-  const channel = document.getElementById('otherChannelSelect').value;
   if (!storeId){ OTHER_BATCHES = []; renderOtherStockList(); return; }
-  const { data } = await sb.from('batches').select('*').eq('store_id', storeId).eq('channel', channel).neq('status','disposed').order('roast_date');
-  OTHER_BATCHES = (data || []).map(b=>({ ...b, _channel:channel }));
+  const { data } = await sb.from('batches').select('*').eq('store_id', storeId).neq('status','disposed').order('roast_date');
+  OTHER_BATCHES = data || [];
   renderOtherStockList();
 }
 function renderOtherStockList(){
   const el = document.getElementById('otherStockList');
-  if (!OTHER_BATCHES.length){ el.innerHTML = `<div class="empty-msg">目前沒有庫存資料</div>`; return; }
-  const rows = [...OTHER_BATCHES].sort((a,b)=> itemName(a.item_id).localeCompare(itemName(b.item_id)) || a.roast_date.localeCompare(b.roast_date));
-  el.innerHTML = `<table>
-    <thead><tr><th>品項</th><th>日期</th><th>包數</th><th></th></tr></thead>
-    <tbody>${rows.map(b=>`
-      <tr>
-        <td data-label="品項">${itemName(b.item_id)}</td>
-        <td data-label="日期">${b.roast_date}</td>
-        <td data-label="包數">${b.quantity}</td>
-        <td data-label=""><button class="btn-sm" onclick="openTransferRequestModal(${b.id})">申請調貨</button></td>
-      </tr>`).join('')}</tbody>
-  </table>`;
+  if (!OTHER_BATCHES.length){ el.innerHTML = `<div class="empty-msg">該店目前沒有庫存資料</div>`; return; }
+  el.innerHTML = ['retail','brew','filter'].map(ch=>{
+    const rows = OTHER_BATCHES.filter(b=>b.channel===ch)
+      .sort((a,b)=> itemName(a.item_id).localeCompare(itemName(b.item_id)) || a.roast_date.localeCompare(b.roast_date));
+    if (!rows.length) return '';
+    return `<div class="item-group">
+      <div class="item-group-title">${TYPE_LABEL[ch]}</div>
+      <table>
+        <thead><tr><th>品項</th><th>日期</th><th>包數</th><th></th></tr></thead>
+        <tbody>${rows.map(b=>`
+          <tr>
+            <td data-label="品項">${itemName(b.item_id)}</td>
+            <td data-label="日期">${b.roast_date}</td>
+            <td data-label="包數">${b.quantity}</td>
+            <td data-label=""><button class="btn-sm" onclick="openTransferRequestModal(${b.id})">申請調貨</button></td>
+          </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+  }).join('') || `<div class="empty-msg">該店目前沒有庫存資料</div>`;
 }
 function openTransferRequestModal(batchId){
   ensureCounterName(()=>doOpenTransferRequestModal(batchId));
@@ -611,7 +615,7 @@ function doOpenTransferRequestModal(batchId){
   if (!b) return;
   openModal(`
     <h3>申請調貨</h3>
-    <div class="field"><label>來源門店</label><div>${storeNameOf(b.store_id)}</div></div>
+    <div class="field"><label>來源門店</label><div>${storeNameOf(b.store_id)}（${TYPE_LABEL[b.channel]}）</div></div>
     <div class="field"><label>品項</label><div>${itemName(b.item_id)}（烘焙 ${b.roast_date}，該店現有 ${b.quantity} 包）</div></div>
     <div class="field"><label>需求包數</label><input type="number" id="trQty" min="1" value="1"></div>
     <div class="field"><label>原因</label><textarea id="trReason" placeholder="例：本店缺貨、活動需求…"></textarea></div>
@@ -627,7 +631,7 @@ async function submitTransferRequest(batchId){
   const reason = document.getElementById('trReason').value.trim();
   if (quantity<=0){ toast('請輸入數量'); return; }
   const { error } = await sb.from('transfer_requests').insert({
-    requesting_store_id:STORE_ID, source_store_id:b.store_id, item_id:b.item_id, channel:b._channel,
+    requesting_store_id:STORE_ID, source_store_id:b.store_id, item_id:b.item_id, channel:b.channel,
     quantity, reason, requested_by:counterName, status:'pending'
   });
   if (error){ toast('送出失敗：'+error.message); return; }
