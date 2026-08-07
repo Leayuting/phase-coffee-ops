@@ -426,7 +426,31 @@ function renderAlertTab(){
             }).join('')}
           </div>
         </div>`).join('') : `<div class="empty-msg">目前沒有販售豆批次資料</div>`}
+    </div>
+    <div class="section">
+      <h2>回收歷史紀錄</h2>
+      ${renderReturnHistory()}
     </div>`;
+}
+function renderReturnHistory(){
+  if (!RETURNS.length) return `<div class="empty-msg">目前沒有回收紀錄</div>`;
+  const sorted = [...RETURNS].sort((a,b)=>new Date(b.submitted_at)-new Date(a.submitted_at));
+  return `<table>
+    <thead><tr><th>門店</th><th>品項</th><th>數量</th><th>烘焙日期</th><th>工廠處置</th><th>狀態</th><th>完成人</th><th>發起時間</th></tr></thead>
+    <tbody>
+      ${sorted.map(r=>`
+        <tr>
+          <td>${storeName(r.store_id)}</td>
+          <td>${itemName(r.item_id)}</td>
+          <td>${r.quantity}</td>
+          <td>${r.roast_date}</td>
+          <td>${r.factory_decision||'—'}${r.decision_note?'（'+r.decision_note+'）':''}</td>
+          <td>${r.status==='pending' ? '<span class="status-pill status-pending">待門店完成</span>' : '<span class="status-pill status-decided">已完成</span>'}</td>
+          <td>${r.completed_by||'—'}</td>
+          <td>${fmtDT(new Date(r.submitted_at).getTime())}</td>
+        </tr>`).join('')}
+    </tbody>
+  </table>`;
 }
 function renderAlertBatchLine(b){
   const age = ageDaysOf(b.roast_date, Date.now());
