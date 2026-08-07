@@ -441,11 +441,12 @@ const CHANNEL_LABEL = { retail:'架上販售豆', brew:'門市沖煮豆', filter
 function openAddBatchModal(channel){
   const storeOpts = STORES.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
   const itemOpts = ITEMS.map(i=>`<option value="${i.id}">${i.name}</option>`).join('');
+  const needsRoast = channel !== 'filter';
   openModal(`
     <h3>新增批次（${CHANNEL_LABEL[channel]}）</h3>
     <div class="field"><label>門店</label><select id="nbStore">${storeOpts}</select></div>
     <div class="field"><label>品項</label><select id="nbItem">${itemOpts}</select></div>
-    <div class="field"><label>烘焙日期</label><input type="date" id="nbRoast" value="${todayStr()}"></div>
+    ${needsRoast ? `<div class="field"><label>烘焙日期</label><input type="date" id="nbRoast" value="${todayStr()}"></div>` : ''}
     <div class="field"><label>數量</label><input type="number" id="nbQty" min="0" value="1"></div>
     <div class="modal-actions">
       <button class="btn-outline" onclick="closeModal()">取消</button>
@@ -455,7 +456,8 @@ function openAddBatchModal(channel){
 async function saveAddBatch(channel){
   const store_id = document.getElementById('nbStore').value;
   const item_id = Number(document.getElementById('nbItem').value);
-  const roast_date = document.getElementById('nbRoast').value;
+  const roastInput = document.getElementById('nbRoast');
+  const roast_date = roastInput ? roastInput.value : todayStr();
   const quantity = Number(document.getElementById('nbQty').value||0);
   if (!roast_date || quantity<0){ toast('請填寫完整資料'); return; }
   const { error } = await sb.from('batches').insert({ store_id, item_id, channel, roast_date, quantity, status:'active', source:'manual' });

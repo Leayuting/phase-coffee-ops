@@ -480,10 +480,11 @@ function openAddBatchModal(type){
 }
 function doOpenAddBatchModal(type){
   const opts = ITEMS.map(i=>`<option value="${i.id}">${i.name}</option>`).join('');
+  const needsRoast = type !== 'filter';
   openModal(`
     <h3>新增庫存（${TYPE_LABEL[type]}）</h3>
     <div class="field"><label>品項</label><select id="nbItem">${opts}</select></div>
-    <div class="field"><label>烘焙日期</label><input type="date" id="nbRoast" value="${todayStr()}"></div>
+    ${needsRoast ? `<div class="field"><label>烘焙日期</label><input type="date" id="nbRoast" value="${todayStr()}"></div>` : ''}
     <div class="field"><label>包數</label><input type="number" id="nbQty" min="0" value="1"></div>
     <div class="modal-actions">
       <button class="btn-outline" onclick="closeModal()">取消</button>
@@ -492,7 +493,8 @@ function doOpenAddBatchModal(type){
 }
 async function saveAddBatch(type){
   const item_id = Number(document.getElementById('nbItem').value);
-  const roast_date = document.getElementById('nbRoast').value;
+  const roastInput = document.getElementById('nbRoast');
+  const roast_date = roastInput ? roastInput.value : todayStr();
   const quantity = Number(document.getElementById('nbQty').value||0);
   if (!roast_date || quantity<0){ toast('請填寫完整資料'); return; }
   const now = new Date().toISOString();
