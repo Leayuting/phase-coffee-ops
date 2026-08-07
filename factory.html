@@ -63,16 +63,18 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
 .store-col{margin-bottom:6px;}
 .store-col .store-label{font-size:11.5px;color:var(--gray-70);font-weight:700;margin-bottom:3px;}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
-.fulfill-cell{min-width:190px;}
-.fulfill-done{color:var(--ok);font-weight:600;font-size:12.5px;}
-.fulfill-form{display:flex;flex-direction:column;gap:4px;margin-top:4px;}
-.fulfill-form .row{display:flex;gap:4px;align-items:center;}
 .status-pill{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;white-space:nowrap;}
 .status-pending{background:var(--yellow-bg);color:#8a6d1a;}
-.status-approved{background:#e3f3ea;color:#2c6e4a;}
-.status-rejected{background:var(--red-bg);color:var(--danger);}
-.addon-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--gray-08);flex-wrap:wrap;}
-.addon-row:first-child{border-top:none;}
+.status-decided{background:var(--gray-10);color:var(--gray-70);}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:200;padding:16px;}
+.overlay.show{display:flex;}
+.modal{background:#fff;border-radius:14px;width:100%;max-width:420px;padding:20px;max-height:88vh;overflow:auto;}
+.modal h3{font-size:16px;margin-bottom:14px;}
+.field{margin-bottom:12px;}
+.field label{display:block;font-size:12.5px;color:var(--gray-70);margin-bottom:4px;font-weight:600;}
+.field select,.field input,.field textarea{width:100%;padding:9px 10px;border:1px solid var(--gray-20);border-radius:6px;font-size:14.5px;font-family:inherit;}
+.modal-actions{display:flex;gap:8px;margin-top:16px;}
+.modal-actions .btn,.modal-actions .btn-outline{flex:1;text-align:center;}
 @media (max-width:800px){ .grid3{grid-template-columns:1fr;} table,thead,tbody,tr{display:block;} th{display:none;} td{display:flex;justify-content:space-between;border:none;padding:4px 0;} tr{border-bottom:1px solid var(--gray-10);padding:8px 0;} }
 .picker{padding:60px 18px;text-align:center;max-width:340px;margin:0 auto;}
 .picker h1{font-size:18px;margin-bottom:24px;}
@@ -113,20 +115,17 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
 <div class="tabs">
   <button class="tab-btn active" data-tab="items" onclick="switchTab('items')">品項管理</button>
   <button class="tab-btn" data-tab="alert" onclick="switchTab('alert')">販售豆總覽</button>
-  <button class="tab-btn" data-tab="retail" onclick="switchTab('retail')">販售豆下單彙總</button>
-  <button class="tab-btn" data-tab="brew" onclick="switchTab('brew')">沖煮豆下單彙總</button>
-  <button class="tab-btn" data-tab="addon" onclick="switchTab('addon')">追加申請審核</button>
+  <button class="tab-btn" data-tab="brewboard" onclick="switchTab('brewboard')">沖煮豆總覽</button>
   <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">系統設定</button>
 </div>
 <main>
   <section id="tab-items" class="tab-panel active"></section>
   <section id="tab-alert" class="tab-panel"></section>
-  <section id="tab-retail" class="tab-panel"></section>
-  <section id="tab-brew" class="tab-panel"></section>
-  <section id="tab-addon" class="tab-panel"></section>
+  <section id="tab-brewboard" class="tab-panel"></section>
   <section id="tab-settings" class="tab-panel"></section>
 </main>
 </div>
+<div class="overlay" id="overlay"><div class="modal" id="modalBody"></div></div>
 <div class="toast" id="toast" style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--black);color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:300;opacity:0;transition:opacity .2s;pointer-events:none;"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -157,19 +156,7 @@ function taipeiParts(nowMs){
   const s = taipeiShifted(nowMs);
   return { y:s.getUTCFullYear(), m:s.getUTCMonth(), d:s.getUTCDate(), dow:s.getUTCDay() };
 }
-function taipeiDateToUtcMs(y,m,d,hh=0,mm=0){ return Date.UTC(y,m,d,hh,mm,0) - 8*3600*1000; }
 function dateStr(y,m,d){ return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
-function currentCycleWindow(type, nowMs){
-  const p = taipeiParts(nowMs);
-  const targetDow = type === 'retail' ? 0 : 3;
-  const back = (p.dow - targetDow + 7) % 7;
-  const anchorShiftedMs = taipeiShifted(nowMs).getTime() - back*86400000;
-  const a = new Date(anchorShiftedMs);
-  const ay=a.getUTCFullYear(), am=a.getUTCMonth(), ad=a.getUTCDate();
-  const weekStart = dateStr(ay,am,ad);
-  const lockAtMs = taipeiDateToUtcMs(ay,am,ad+1,10,30);
-  return { weekStart, lockAtMs };
-}
 function fmtDT(ms){
   const s = taipeiShifted(ms);
   return `${s.getUTCMonth()+1}/${s.getUTCDate()} ${String(s.getUTCHours()).padStart(2,'0')}:${String(s.getUTCMinutes()).padStart(2,'0')}`;
@@ -184,10 +171,6 @@ function todayStr(){ const p = taipeiParts(Date.now()); return dateStr(p.y,p.m,p
 // ══════════ STATE ══════════
 let STORES = [], ITEMS_ALL = [], ITEMS = [];
 let BATCHES = [], RETURNS = [];
-let CYCLES = {};       // key `${store}:${type}` -> cycle row
-let ORDER_ITEMS = {};  // cycle_id -> {item_id: qty}
-let FULFILLMENTS = {}; // cycle_id -> {item_id: row}
-let ADDONS = [];
 
 const DECISIONS = ['調回','變成出杯豆','報廢','其他'];
 
@@ -256,41 +239,14 @@ if (localStorage.getItem(SESSION_KEY) === '1'){ enterApp(); } else { showLogin()
 async function loadAll(){
   setSyncStatus('loading');
   try{
-    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:addons}] = await Promise.all([
+    const [{data:stores},{data:itemsAll},{data:batches},{data:returns}] = await Promise.all([
       sb.from('stores').select('*').order('sort_order'),
       sb.from('items').select('*').order('sort_order'),
       sb.from('batches').select('*').neq('status','disposed').order('roast_date'),
-      sb.from('returns').select('*').order('submitted_at',{ascending:false}),
-      sb.from('addon_requests').select('*').order('requested_at',{ascending:false})
+      sb.from('returns').select('*').order('submitted_at',{ascending:false})
     ]);
     STORES = stores || []; ITEMS_ALL = itemsAll || []; ITEMS = ITEMS_ALL.filter(i=>i.active);
-    BATCHES = batches || []; RETURNS = returns || []; ADDONS = addons || [];
-
-    for (const st of STORES){
-      for (const type of ['retail','brew']){
-        const { weekStart, lockAtMs } = currentCycleWindow(type, Date.now());
-        const { data:existing } = await sb.from('order_cycles').select('*')
-          .eq('store_id', st.id).eq('type', type).eq('week_start', weekStart).maybeSingle();
-        let row = existing;
-        if (!row){
-          const { data:created } = await sb.from('order_cycles')
-            .upsert({ store_id:st.id, type, week_start:weekStart, lock_at:new Date(lockAtMs).toISOString() },
-                    { onConflict:'store_id,type,week_start' }).select().maybeSingle();
-          row = created;
-        }
-        CYCLES[`${st.id}:${type}`] = row;
-      }
-    }
-    const cycleIds = Object.values(CYCLES).filter(Boolean).map(c=>c.id);
-    if (cycleIds.length){
-      const [{data:oi},{data:fu}] = await Promise.all([
-        sb.from('order_items').select('*').in('cycle_id', cycleIds),
-        sb.from('fulfillments').select('*').in('cycle_id', cycleIds)
-      ]);
-      ORDER_ITEMS = {}; FULFILLMENTS = {};
-      (oi||[]).forEach(r=>{ (ORDER_ITEMS[r.cycle_id] ||= {})[r.item_id] = r.quantity; });
-      (fu||[]).forEach(r=>{ (FULFILLMENTS[r.cycle_id] ||= {})[r.item_id] = r; });
-    }
+    BATCHES = batches || []; RETURNS = returns || [];
     setSyncStatus('ok');
   }catch(e){ console.error(e); setSyncStatus('local'); }
   render();
@@ -315,7 +271,7 @@ document.addEventListener('focusout', ()=>{
   setTimeout(()=>{ if (!isEditingInput()){ pendingReload = false; loadAll(); } }, 150);
 });
 function subscribeRealtime(){
-  const tables = ['stores','items','batches','returns','order_cycles','order_items','fulfillments','addon_requests'];
+  const tables = ['stores','items','batches','returns'];
   const ch = sb.channel('factory-realtime');
   tables.forEach(t=>ch.on('postgres_changes',{event:'*',schema:'public',table:t}, scheduleReload));
   ch.subscribe(s=>{
@@ -332,9 +288,7 @@ function switchTab(tab){
 function render(){
   renderItemsTab();
   renderAlertTab();
-  renderOrderTab('retail');
-  renderOrderTab('brew');
-  renderAddonTab();
+  renderBrewBoardTab();
   renderSettingsTab();
 }
 function itemName(id){ const it = ITEMS_ALL.find(i=>i.id===id); return it ? it.name : '（已刪除品項）'; }
@@ -422,7 +376,7 @@ function renderAlertTab(){
 
   el.innerHTML = `
     <div class="section">
-      <h2>跨店批次效期看板</h2>
+      <h2>跨店批次效期看板<button class="btn-sm" onclick="openAddBatchModal('retail')">＋ 新增批次</button></h2>
       <div class="legend">
         <span><i style="background:var(--yellow-bd)"></i>烘焙14–20天</span>
         <span><i style="background:var(--red-bd)"></i>烘焙21天以上</span>
@@ -446,6 +400,65 @@ function renderAlertTab(){
       <h2>回收歷史紀錄</h2>
       ${renderReturnHistory()}
     </div>`;
+}
+
+function renderBrewBoardTab(){
+  const el = document.getElementById('tab-brewboard');
+  const brewBatches = BATCHES.filter(b=>b.channel==='brew');
+  const byItem = {};
+  brewBatches.forEach(b=>{ (byItem[b.item_id] ||= []).push(b); });
+  const order = ITEMS.map(i=>i.id).filter(id=>byItem[id]);
+
+  el.innerHTML = `
+    <div class="section">
+      <h2>跨店沖煮豆庫存看板<button class="btn-sm" onclick="openAddBatchModal('brew')">＋ 新增批次</button></h2>
+      ${order.length ? order.map(itemId=>`
+        <div class="item-block">
+          <div class="item-block-title">${itemName(itemId)}</div>
+          <div class="grid3">
+            ${STORES.map(st=>{
+              const list = byItem[itemId].filter(b=>b.store_id===st.id).sort((a,b)=>a.roast_date.localeCompare(b.roast_date));
+              return `<div class="store-col">
+                <div class="store-label">${st.name}</div>
+                ${list.length ? list.map(b=>`<div class="batch-line">${b.roast_date}（${ageDaysOf(b.roast_date, Date.now())}天）× ${b.quantity}</div>`).join('') : `<div class="empty-msg" style="padding:2px;">無庫存</div>`}
+              </div>`;
+            }).join('')}
+          </div>
+        </div>`).join('') : `<div class="empty-msg">目前沒有沖煮豆批次資料</div>`}
+    </div>`;
+}
+
+// ══════════ 新增批次（工廠端簡化版） ══════════
+function openModal(html){
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('overlay').classList.add('show');
+}
+function closeModal(){ document.getElementById('overlay').classList.remove('show'); }
+document.getElementById('overlay').addEventListener('click', e=>{ if (e.target.id==='overlay') closeModal(); });
+
+function openAddBatchModal(channel){
+  const storeOpts = STORES.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+  const itemOpts = ITEMS.map(i=>`<option value="${i.id}">${i.name}</option>`).join('');
+  openModal(`
+    <h3>新增批次（${channel==='retail'?'架上販售豆':'門市沖煮豆'}）</h3>
+    <div class="field"><label>門店</label><select id="nbStore">${storeOpts}</select></div>
+    <div class="field"><label>品項</label><select id="nbItem">${itemOpts}</select></div>
+    <div class="field"><label>烘焙日期</label><input type="date" id="nbRoast" value="${todayStr()}"></div>
+    <div class="field"><label>數量</label><input type="number" id="nbQty" min="0" value="1"></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="saveAddBatch('${channel}')">新增</button>
+    </div>`);
+}
+async function saveAddBatch(channel){
+  const store_id = document.getElementById('nbStore').value;
+  const item_id = Number(document.getElementById('nbItem').value);
+  const roast_date = document.getElementById('nbRoast').value;
+  const quantity = Number(document.getElementById('nbQty').value||0);
+  if (!roast_date || quantity<0){ toast('請填寫完整資料'); return; }
+  const { error } = await sb.from('batches').insert({ store_id, item_id, channel, roast_date, quantity, status:'active', source:'manual' });
+  if (error){ toast('新增失敗：'+error.message); return; }
+  closeModal(); toast('已新增批次'); loadAll();
 }
 function renderReturnHistory(){
   if (!RETURNS.length) return `<div class="empty-msg">目前沒有回收紀錄</div>`;
@@ -564,119 +577,6 @@ async function initiateRecall(batchId){
   toast('已通知門店'); loadAll();
 }
 
-// ══════════ 下單彙總（retail / brew） ══════════
-function renderOrderTab(type){
-  const el = document.getElementById('tab-'+type);
-  const label = type==='retail' ? '架上販售豆' : '門市沖煮豆';
-  const anyCycle = STORES.map(st=>CYCLES[`${st.id}:${type}`]).find(Boolean);
-  const locked = anyCycle ? Date.now() >= new Date(anyCycle.lock_at).getTime() : false;
-
-  el.innerHTML = `
-    <div class="banner">${label}本週訂單 ${anyCycle ? (locked ? `已於 ${fmtDT(new Date(anyCycle.lock_at).getTime())} 鎖單` : `開放中，將於 ${fmtDT(new Date(anyCycle.lock_at).getTime())} 鎖單`) : '載入中…'}</div>
-    <div class="section">
-      <h2>各店需求彙總</h2>
-      ${ITEMS.length ? ITEMS.map(it=>renderOrderItemBlock(it, type)).join('') : `<div class="empty-msg">尚無品項</div>`}
-    </div>`;
-}
-function renderOrderItemBlock(item, type){
-  const rows = STORES.map(st=>{
-    const cycle = CYCLES[`${st.id}:${type}`];
-    const qty = cycle ? (ORDER_ITEMS[cycle.id]?.[item.id] ?? 0) : 0;
-    const ful = cycle ? FULFILLMENTS[cycle.id]?.[item.id] : null;
-    return { store:st, cycle, qty, ful };
-  });
-  if (!rows.some(r=>r.qty>0) && !rows.some(r=>r.ful)) return '';
-  return `<div class="item-block">
-    <div class="item-block-title">${item.name}</div>
-    <div class="grid3">
-      ${rows.map(r=>renderFulfillCell(r, item, type)).join('')}
-    </div>
-  </div>`;
-}
-function renderFulfillCell({store,cycle,qty,ful}, item, type){
-  if (!cycle || qty<=0){
-    return `<div class="store-col"><div class="store-label">${store.name}</div><div class="empty-msg" style="padding:2px;">無需求</div></div>`;
-  }
-  if (ful && ful.shipped){
-    return `<div class="store-col fulfill-cell">
-      <div class="store-label">${store.name}（需求 ${qty}）</div>
-      <div class="fulfill-done">✓ 已出貨 ${ful.shipped_qty}（烘焙 ${ful.roast_date||'—'}）</div>
-      <button class="btn-outline" onclick="resetFulfill(${cycle.id}, ${item.id})">取消出貨</button>
-    </div>`;
-  }
-  const rid = `${cycle.id}-${item.id}`;
-  return `<div class="store-col fulfill-cell">
-    <div class="store-label">${store.name}（需求 ${qty}）</div>
-    <div class="fulfill-form">
-      <div class="row"><input type="date" class="date-input" id="fdate-${rid}" value="${todayStr()}"></div>
-      <div class="row">
-        <input type="number" class="mini-input" id="fqty-${rid}" value="${qty}" min="0">
-        <button class="btn-sm" onclick="confirmFulfill(${cycle.id}, ${item.id}, '${store.id}', ${type==='retail'?"'retail'":"'brew'"})">確認出貨</button>
-      </div>
-    </div>
-  </div>`;
-}
-async function confirmFulfill(cycleId, itemId, storeId, channel){
-  const rid = `${cycleId}-${itemId}`;
-  const roast_date = document.getElementById('fdate-'+rid).value;
-  const shipped_qty = Number(document.getElementById('fqty-'+rid).value||0);
-  if (!roast_date || shipped_qty<=0){ toast('請填寫烘焙日期與數量'); return; }
-  const { error:e1 } = await sb.from('fulfillments').upsert({
-    cycle_id:cycleId, item_id:itemId, shipped:true, shipped_qty, roast_date, updated_at:new Date().toISOString()
-  }, { onConflict:'cycle_id,item_id' });
-  if (e1){ toast('出貨失敗：'+e1.message); return; }
-  const { error:e2 } = await sb.from('batches').insert({
-    store_id:storeId, item_id:itemId, channel, roast_date, quantity:shipped_qty, status:'active', source:'fulfillment'
-  });
-  if (e2){ toast('批次建立失敗：'+e2.message); return; }
-  toast('已確認出貨'); loadAll();
-}
-async function resetFulfill(cycleId, itemId){
-  await sb.from('fulfillments').update({ shipped:false }).eq('cycle_id', cycleId).eq('item_id', itemId);
-  toast('已取消出貨標記（門店端批次不會自動移除）'); loadAll();
-}
-
-// ══════════ 追加申請審核 ══════════
-function renderAddonTab(){
-  const el = document.getElementById('tab-addon');
-  const pending = ADDONS.filter(a=>a.status==='pending');
-  const decided = ADDONS.filter(a=>a.status!=='pending');
-  const label = { pending:'審核中', approved:'已核准', rejected:'已拒絕' };
-  const cls = { pending:'status-pending', approved:'status-approved', rejected:'status-rejected' };
-  el.innerHTML = `
-    <div class="section">
-      <h2>待審核（${pending.length}）</h2>
-      ${pending.length ? pending.map(a=>`
-        <div class="addon-row">
-          <div>
-            <b>${storeName(a.store_id)}</b>｜${a.type==='retail'?'架上販售豆':'門市沖煮豆'}｜${itemName(a.item_id)} × ${a.quantity}<br>
-            <span style="color:var(--gray-50)">${a.reason||''}${a.requested_by ? '　申請人：'+a.requested_by : ''}</span>
-          </div>
-          <div style="display:flex;gap:6px;">
-            <input type="text" id="addonNote-${a.id}" placeholder="備註" style="width:110px">
-            <button class="btn-sm" onclick="decideAddon(${a.id}, 'approved')">核准</button>
-            <button class="btn-danger" onclick="decideAddon(${a.id}, 'rejected')">拒絕</button>
-          </div>
-        </div>`).join('') : `<div class="empty-msg">目前沒有待審核的追加申請</div>`}
-    </div>
-    <div class="section">
-      <h2>審核紀錄</h2>
-      ${decided.length ? decided.map(a=>`
-        <div class="addon-row">
-          <div>
-            <b>${storeName(a.store_id)}</b>｜${a.type==='retail'?'架上販售豆':'門市沖煮豆'}｜${itemName(a.item_id)} × ${a.quantity}<br>
-            <span style="color:var(--gray-50)">${a.decision_note||''}</span>
-          </div>
-          <span class="status-pill ${cls[a.status]}">${label[a.status]}</span>
-        </div>`).join('') : `<div class="empty-msg">尚無紀錄</div>`}
-    </div>`;
-}
-async function decideAddon(id, status){
-  const note = document.getElementById('addonNote-'+id)?.value.trim() || '';
-  await sb.from('addon_requests').update({ status, decision_note:note, decided_at:new Date().toISOString() }).eq('id', id);
-  toast(status==='approved' ? '已核准' : '已拒絕'); loadAll();
-}
-
 // ══════════ 系統設定：重設登入 PIN ══════════
 function renderSettingsTab(){
   const el = document.getElementById('tab-settings');
@@ -734,7 +634,7 @@ document.addEventListener('click', e=>{
   if (!menu) return;
   if (!e.target.closest('#backupMenu') && e.target.tagName!=='BUTTON'){ menu.style.display='none'; }
 });
-const BACKUP_TABLES = ['stores','items','batches','order_cycles','order_items','fulfillments','returns','addon_requests'];
+const BACKUP_TABLES = ['stores','items','batches','returns'];
 async function exportBackup(){
   toggleBackupMenu();
   const tables = {};
