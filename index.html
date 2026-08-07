@@ -617,7 +617,7 @@ function doOpenTransferRequestModal(batchId){
     <h3>申請調貨</h3>
     <div class="field"><label>來源門店</label><div>${storeNameOf(b.store_id)}（${TYPE_LABEL[b.channel]}）</div></div>
     <div class="field"><label>品項</label><div>${itemName(b.item_id)}（烘焙 ${b.roast_date}，該店現有 ${b.quantity} 包）</div></div>
-    <div class="field"><label>需求包數</label><input type="number" id="trQty" min="1" value="1"></div>
+    <div class="field"><label>需求包數（上限 ${b.quantity}）</label><input type="number" id="trQty" min="1" max="${b.quantity}" value="1"></div>
     <div class="field"><label>原因</label><textarea id="trReason" placeholder="例：本店缺貨、活動需求…"></textarea></div>
     <div class="modal-actions">
       <button class="btn-outline" onclick="closeModal()">取消</button>
@@ -630,6 +630,7 @@ async function submitTransferRequest(batchId){
   const quantity = Number(document.getElementById('trQty').value||0);
   const reason = document.getElementById('trReason').value.trim();
   if (quantity<=0){ toast('請輸入數量'); return; }
+  if (quantity>b.quantity){ toast(`數量不能超過該店現有的 ${b.quantity} 包`); return; }
   const { error } = await sb.from('transfer_requests').insert({
     requesting_store_id:STORE_ID, source_store_id:b.store_id, item_id:b.item_id, channel:b.channel,
     quantity, reason, requested_by:counterName, status:'pending'
