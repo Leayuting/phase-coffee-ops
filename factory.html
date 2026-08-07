@@ -339,7 +339,7 @@ function renderItemsTab(){
     <div class="section">
       <h2>品項清單（共 ${ITEMS_ALL.length} 項，啟用 ${ITEMS.length} 項）</h2>
       <table>
-        <thead><tr><th style="width:36px"></th><th>品項名稱</th><th style="width:70px">狀態</th><th style="width:150px"></th></tr></thead>
+        <thead><tr><th style="width:36px"></th><th>品項名稱</th><th style="width:70px">狀態</th><th style="width:220px"></th></tr></thead>
         <tbody>
           ${ITEMS_ALL.map((it,idx)=>`
             <tr>
@@ -350,6 +350,7 @@ function renderItemsTab(){
                 <button class="btn-outline" onclick="moveItem(${it.id},-1)">↑</button>
                 <button class="btn-outline" onclick="moveItem(${it.id},1)">↓</button>
                 <button class="btn-outline" onclick="toggleItemActive(${it.id}, ${!it.active})">${it.active?'停用':'啟用'}</button>
+                <button class="btn-danger" onclick="deleteItem(${it.id}, '${it.name.replace(/'/g,"\\'")}')">刪除</button>
               </td>
             </tr>`).join('')}
         </tbody>
@@ -370,6 +371,19 @@ async function renameItem(id, name){
 }
 async function toggleItemActive(id, active){
   await sb.from('items').update({ active }).eq('id', id); toast(active?'已啟用':'已停用'); loadAll();
+}
+async function deleteItem(id, name){
+  if (!confirm(`確定要刪除品項「${name}」嗎？此動作無法復原。`)) return;
+  const { error } = await sb.from('items').delete().eq('id', id);
+  if (error){
+    if (error.code === '23503'){
+      toast('此品項已有批次／下單歷史紀錄，無法刪除，可改用「停用」隱藏');
+    } else {
+      toast('刪除失敗：'+error.message);
+    }
+    return;
+  }
+  toast('已刪除品項'); loadAll();
 }
 async function moveItem(id, dir){
   const idx = ITEMS_ALL.findIndex(i=>i.id===id);
