@@ -85,14 +85,32 @@ main{max-width:640px;margin:0 auto;}
 .legend i{width:9px;height:9px;border-radius:2px;display:inline-block;}
 .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--black);color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:300;opacity:0;transition:opacity .2s;pointer-events:none;}
 .toast.show{opacity:1;}
+.pin-dots{display:flex;justify-content:center;gap:9px;margin-bottom:10px;}
+.pin-dots i{width:13px;height:13px;border-radius:50%;border:1.5px solid var(--black);display:inline-block;}
+.pin-dots i.filled{background:var(--black);}
+.pin-error{color:var(--danger);font-size:13px;min-height:20px;margin-bottom:6px;}
+.pin-keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:260px;margin:0 auto;}
+.pin-keypad button{height:56px;border-radius:10px;border:1px solid var(--gray-20);background:#fff;font-size:19px;font-weight:600;font-family:inherit;}
+.pin-keypad button:active{transform:scale(.96);}
+.pin-keypad .pk-empty{visibility:hidden;}
 </style>
 </head>
 <body>
 
 <div id="pickerRoot" style="display:none" class="picker">
   <h1>PHASE｜門店盤點下單系統</h1>
-  <p style="color:var(--gray-50);font-size:13px;margin-bottom:20px;">請選擇門店</p>
-  <div id="pickerList"></div>
+  <div id="loginStoreSelect">
+    <p style="color:var(--gray-50);font-size:13px;margin-bottom:20px;">請選擇門店</p>
+    <div id="pickerList"></div>
+  </div>
+  <div id="loginPinPad" style="display:none;">
+    <p id="pinStoreName" style="font-size:17px;font-weight:700;margin-bottom:4px;"></p>
+    <p style="color:var(--gray-50);font-size:13px;margin-bottom:18px;">請輸入 8 位數 PIN 碼</p>
+    <div class="pin-dots" id="pinDots"></div>
+    <p class="pin-error" id="pinError">&nbsp;</p>
+    <div class="pin-keypad" id="pinKeypad"></div>
+    <button class="btn-outline" style="margin-top:20px;" onclick="backToStoreSelect()">返回選擇門店</button>
+  </div>
 </div>
 
 <div id="appRoot" style="display:none">
@@ -103,6 +121,7 @@ main{max-width:640px;margin:0 auto;}
       <button onclick="toggleBackupMenu()" style="background:none;border:none;color:#fff;font-size:18px;padding:2px 6px;">⋯</button>
       <div id="backupMenu" style="display:none;position:absolute;right:0;top:28px;background:#fff;color:var(--black);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.2);min-width:150px;z-index:60;overflow:hidden;">
         <button onclick="exportBackup()" style="display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:none;font-size:13px;font-family:inherit;">⬇ 匯出本店資料</button>
+        <button onclick="logout()" style="display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:none;font-size:13px;font-family:inherit;border-top:1px solid var(--gray-08);color:var(--danger);">登出</button>
       </div>
     </div>
   </header>
@@ -187,27 +206,101 @@ let ADDONS = { retail:[], brew:[] };
 
 const TYPE_LABEL = { retail:'架上販售豆', brew:'門市沖煮豆' };
 
+// ══════════ 登入（PIN，邏輯同門市採購系統） ══════════
+const PIN_LENGTH = 8;
+const SESSION_KEY = 'phase_coffee_store_session';
+async function sha256Hex(text){
+  const enc = new TextEncoder().encode(text);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+let pinBuffer = '', pinTargetStore = null, pinChecking = false;
+
+function renderStorePicker(preselect){
+  document.getElementById('pickerList').innerHTML = STORES.map(st =>
+    `<button onclick="startPinLogin('${st.id}')" style="display:block;width:100%;background:#fff;border:none;border-radius:var(--radius);padding:16px;margin-bottom:10px;font-weight:600;font-size:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);">${st.name}</button>`).join('');
+  document.getElementById('loginStoreSelect').style.display = 'block';
+  document.getElementById('loginPinPad').style.display = 'none';
+  if (preselect) startPinLogin(preselect);
+}
+function backToStoreSelect(){
+  document.getElementById('loginStoreSelect').style.display = 'block';
+  document.getElementById('loginPinPad').style.display = 'none';
+}
+function startPinLogin(storeId){
+  pinTargetStore = storeId; pinBuffer = ''; pinChecking = false;
+  const st = STORES.find(x=>x.id===storeId);
+  document.getElementById('pinStoreName').textContent = st ? st.name : storeId;
+  document.getElementById('pinError').textContent = ' ';
+  document.getElementById('loginStoreSelect').style.display = 'none';
+  document.getElementById('loginPinPad').style.display = 'block';
+  renderPinDots();
+  document.getElementById('pinKeypad').innerHTML = ['1','2','3','4','5','6','7','8','9','','0','del']
+    .map(k => k==='' ? `<button class="pk-empty"></button>` :
+      `<button onclick="pressPinKey('${k}')">${k==='del'?'清除':k}</button>`).join('');
+}
+function renderPinDots(){
+  document.getElementById('pinDots').innerHTML = Array.from({length:PIN_LENGTH}, (_,i)=>
+    `<i class="${i<pinBuffer.length?'filled':''}"></i>`).join('');
+}
+async function pressPinKey(k){
+  if (pinChecking) return;
+  if (k==='del'){ pinBuffer = pinBuffer.slice(0,-1); renderPinDots(); return; }
+  if (pinBuffer.length>=PIN_LENGTH) return;
+  pinBuffer += k;
+  renderPinDots();
+  if (pinBuffer.length===PIN_LENGTH) await submitPin();
+}
+async function submitPin(){
+  pinChecking = true;
+  const { data } = await sb.from('store_pins').select('pin_hash').eq('store_id', pinTargetStore).maybeSingle();
+  const hash = await sha256Hex(pinBuffer);
+  pinChecking = false;
+  if (data && data.pin_hash === hash){
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ store: pinTargetStore }));
+    enterStore(pinTargetStore);
+  } else {
+    document.getElementById('pinError').textContent = data ? '密碼錯誤' : '此門店尚未設定 PIN，請聯絡管理者';
+    setTimeout(()=>{ pinBuffer=''; renderPinDots(); document.getElementById('pinError').textContent=' '; }, 600);
+  }
+}
+function logout(){
+  localStorage.removeItem(SESSION_KEY);
+  location.reload();
+}
+
 // ══════════ INIT ══════════
 async function init(){
   const params = new URLSearchParams(location.search);
-  const s = params.get('store');
+  const urlStore = params.get('store');
   const { data: storeRows } = await sb.from('stores').select('*').order('sort_order');
   STORES = storeRows || [];
-  if (!s || !STORES.find(x=>x.id===s)){
-    showPicker(); return;
+
+  document.getElementById('pickerRoot').style.display = 'block';
+
+  let sessionStore = null;
+  try{
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (raw){ const parsed = JSON.parse(raw); if (STORES.find(x=>x.id===parsed.store)) sessionStore = parsed.store; }
+  }catch(e){}
+
+  if (sessionStore){
+    enterStore(sessionStore);
+  } else if (urlStore && STORES.find(x=>x.id===urlStore)){
+    renderStorePicker(urlStore);
+  } else {
+    renderStorePicker(null);
   }
-  STORE_ID = s;
-  STORE_NAME = STORES.find(x=>x.id===s).name;
+}
+function enterStore(storeId){
+  STORE_ID = storeId;
+  STORE_NAME = STORES.find(x=>x.id===storeId)?.name || storeId;
+  document.getElementById('pickerRoot').style.display = 'none';
   document.getElementById('storeName').textContent = STORE_NAME;
   document.getElementById('appRoot').style.display = 'block';
-  await loadAll();
+  loadAll();
   subscribeRealtime();
   setInterval(()=>{ render(); }, 30000); // refresh countdown/lock state
-}
-function showPicker(){
-  document.getElementById('pickerRoot').style.display = 'block';
-  document.getElementById('pickerList').innerHTML = STORES.map(st =>
-    `<a href="?store=${st.id}">${st.name}</a>`).join('');
 }
 
 async function ensureCycle(type){

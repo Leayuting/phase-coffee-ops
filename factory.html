@@ -75,9 +75,29 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
 .addon-row:first-child{border-top:none;}
 .decision-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px;}
 @media (max-width:800px){ .grid3{grid-template-columns:1fr;} table,thead,tbody,tr{display:block;} th{display:none;} td{display:flex;justify-content:space-between;border:none;padding:4px 0;} tr{border-bottom:1px solid var(--gray-10);padding:8px 0;} }
+.picker{padding:60px 18px;text-align:center;max-width:340px;margin:0 auto;}
+.picker h1{font-size:18px;margin-bottom:24px;}
+.pin-dots{display:flex;justify-content:center;gap:9px;margin-bottom:10px;}
+.pin-dots i{width:13px;height:13px;border-radius:50%;border:1.5px solid var(--black);display:inline-block;}
+.pin-dots i.filled{background:var(--black);}
+.pin-error{color:var(--danger);font-size:13px;min-height:20px;margin-bottom:6px;}
+.pin-keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:260px;margin:0 auto;}
+.pin-keypad button{height:56px;border-radius:10px;border:1px solid var(--gray-20);background:#fff;font-size:19px;font-weight:600;font-family:inherit;cursor:pointer;}
+.pin-keypad button:active{transform:scale(.96);}
+.pin-keypad .pk-empty{visibility:hidden;}
 </style>
 </head>
 <body>
+
+<div id="pickerRoot" class="picker">
+  <h1>PHASE｜工廠端 盤點下單管理</h1>
+  <p style="color:var(--gray-50);font-size:13px;margin-bottom:18px;">請輸入 8 位數 PIN 碼</p>
+  <div class="pin-dots" id="pinDots"></div>
+  <p class="pin-error" id="pinError">&nbsp;</p>
+  <div class="pin-keypad" id="pinKeypad"></div>
+</div>
+
+<div id="appRoot" style="display:none">
 <header>
   <div class="title">PHASE｜工廠端 盤點下單管理</div>
   <div class="sync" id="syncStatus">連線中</div>
@@ -86,6 +106,7 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
     <div id="backupMenu" style="display:none;position:absolute;right:0;top:28px;background:#fff;color:var(--black);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.2);min-width:160px;z-index:60;overflow:hidden;">
       <button onclick="exportBackup()" style="display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:none;font-size:13px;font-family:inherit;cursor:pointer;">⬇ 匯出全部備份</button>
       <button onclick="document.getElementById('restoreFileInput').click()" style="display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:none;font-size:13px;font-family:inherit;border-top:1px solid var(--gray-08);cursor:pointer;">⬆ 匯入還原</button>
+      <button onclick="logout()" style="display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:none;font-size:13px;font-family:inherit;border-top:1px solid var(--gray-08);color:var(--danger);cursor:pointer;">登出</button>
     </div>
   </div>
   <input type="file" id="restoreFileInput" accept=".json" style="display:none" onchange="handleRestoreFile(event)">
@@ -96,6 +117,7 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
   <button class="tab-btn" data-tab="retail" onclick="switchTab('retail')">販售豆下單彙總</button>
   <button class="tab-btn" data-tab="brew" onclick="switchTab('brew')">沖煮豆下單彙總</button>
   <button class="tab-btn" data-tab="addon" onclick="switchTab('addon')">追加申請審核</button>
+  <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">系統設定</button>
 </div>
 <main>
   <section id="tab-items" class="tab-panel active"></section>
@@ -103,7 +125,9 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
   <section id="tab-retail" class="tab-panel"></section>
   <section id="tab-brew" class="tab-panel"></section>
   <section id="tab-addon" class="tab-panel"></section>
+  <section id="tab-settings" class="tab-panel"></section>
 </main>
+</div>
 <div class="toast" id="toast" style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--black);color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:300;opacity:0;transition:opacity .2s;pointer-events:none;"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -168,11 +192,67 @@ let ADDONS = [];
 
 const DECISIONS = ['調回','變成出杯豆','報廢','其他'];
 
+// ══════════ 登入（PIN，邏輯同門市採購系統） ══════════
+const PIN_LENGTH = 8;
+const SESSION_KEY = 'phase_coffee_factory_session';
+async function sha256Hex(text){
+  const enc = new TextEncoder().encode(text);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+let pinBuffer = '', pinChecking = false;
+function renderPinDots(){
+  document.getElementById('pinDots').innerHTML = Array.from({length:PIN_LENGTH}, (_,i)=>
+    `<i class="${i<pinBuffer.length?'filled':''}"></i>`).join('');
+}
+function showLogin(){
+  pinBuffer=''; pinChecking=false;
+  document.getElementById('pickerRoot').style.display='block';
+  document.getElementById('appRoot').style.display='none';
+  renderPinDots();
+  document.getElementById('pinError').textContent=' ';
+  document.getElementById('pinKeypad').innerHTML = ['1','2','3','4','5','6','7','8','9','','0','del']
+    .map(k => k==='' ? `<button class="pk-empty"></button>` :
+      `<button onclick="pressPinKey('${k}')">${k==='del'?'清除':k}</button>`).join('');
+}
+async function pressPinKey(k){
+  if (pinChecking) return;
+  if (k==='del'){ pinBuffer = pinBuffer.slice(0,-1); renderPinDots(); return; }
+  if (pinBuffer.length>=PIN_LENGTH) return;
+  pinBuffer += k;
+  renderPinDots();
+  if (pinBuffer.length===PIN_LENGTH) await submitPin();
+}
+async function submitPin(){
+  pinChecking = true;
+  const { data } = await sb.from('factory_auth').select('pin_hash').eq('id','factory').maybeSingle();
+  const hash = await sha256Hex(pinBuffer);
+  pinChecking = false;
+  if (data && data.pin_hash === hash){
+    localStorage.setItem(SESSION_KEY, '1');
+    enterApp();
+  } else {
+    document.getElementById('pinError').textContent = '密碼錯誤';
+    setTimeout(()=>{ pinBuffer=''; renderPinDots(); document.getElementById('pinError').textContent=' '; }, 600);
+  }
+}
+function logout(){
+  localStorage.removeItem(SESSION_KEY);
+  location.reload();
+}
+function enterApp(){
+  document.getElementById('pickerRoot').style.display='none';
+  document.getElementById('appRoot').style.display='block';
+  init();
+}
+
 async function init(){
   await loadAll();
   subscribeRealtime();
   setInterval(render, 30000);
 }
+
+if (localStorage.getItem(SESSION_KEY) === '1'){ enterApp(); } else { showLogin(); }
 
 async function loadAll(){
   setSyncStatus('loading');
@@ -240,6 +320,7 @@ function render(){
   renderOrderTab('retail');
   renderOrderTab('brew');
   renderAddonTab();
+  renderSettingsTab();
 }
 function itemName(id){ const it = ITEMS_ALL.find(i=>i.id===id); return it ? it.name : '（已刪除品項）'; }
 function storeName(id){ const s = STORES.find(x=>x.id===id); return s ? s.name : id; }
@@ -472,6 +553,53 @@ async function decideAddon(id, status){
   toast(status==='approved' ? '已核准' : '已拒絕'); loadAll();
 }
 
+// ══════════ 系統設定：重設登入 PIN ══════════
+function renderSettingsTab(){
+  const el = document.getElementById('tab-settings');
+  el.innerHTML = `
+    <div class="section">
+      <h2>門店登入 PIN</h2>
+      <p style="color:var(--gray-50);font-size:12.5px;margin-bottom:10px;">每間門店共用一組 8 位數 PIN，門店端登入時輸入。</p>
+      ${STORES.map(st=>`
+        <div class="addon-row">
+          <div><b>${st.name}</b></div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <input type="text" inputmode="numeric" maxlength="8" placeholder="輸入新的 8 位數 PIN" id="newpin-${st.id}" class="mini-input" style="width:130px;">
+            <button class="btn-sm" onclick="resetStorePin('${st.id}')">重設</button>
+          </div>
+        </div>`).join('')}
+    </div>
+    <div class="section">
+      <h2>工廠端登入 PIN</h2>
+      <p style="color:var(--gray-50);font-size:12.5px;margin-bottom:10px;">工廠端（本頁）自己的 8 位數 PIN，與門店 PIN 不同。</p>
+      <div class="addon-row">
+        <div><b>工廠端</b></div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input type="text" inputmode="numeric" maxlength="8" placeholder="輸入新的 8 位數 PIN" id="newpin-factory" class="mini-input" style="width:130px;">
+          <button class="btn-sm" onclick="resetFactoryPin()">重設</button>
+        </div>
+      </div>
+    </div>`;
+}
+async function resetStorePin(storeId){
+  const input = document.getElementById('newpin-'+storeId);
+  const pin = input.value.trim();
+  if (!/^\d{8}$/.test(pin)){ toast('PIN 需為 8 位數字'); return; }
+  const pin_hash = await sha256Hex(pin);
+  const { error } = await sb.from('store_pins').upsert({ store_id:storeId, pin_hash, updated_at:new Date().toISOString() }, { onConflict:'store_id' });
+  if (error){ toast('重設失敗：'+error.message); return; }
+  input.value=''; toast('已重設 PIN');
+}
+async function resetFactoryPin(){
+  const input = document.getElementById('newpin-factory');
+  const pin = input.value.trim();
+  if (!/^\d{8}$/.test(pin)){ toast('PIN 需為 8 位數字'); return; }
+  const pin_hash = await sha256Hex(pin);
+  const { error } = await sb.from('factory_auth').upsert({ id:'factory', pin_hash, updated_at:new Date().toISOString() }, { onConflict:'id' });
+  if (error){ toast('重設失敗：'+error.message); return; }
+  input.value=''; toast('已重設工廠端 PIN，下次登入請用新密碼');
+}
+
 // ══════════ 備份還原 + PWA ══════════
 function toggleBackupMenu(){
   const el = document.getElementById('backupMenu');
@@ -518,8 +646,6 @@ async function handleRestoreFile(ev){
 if ('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
 }
-
-init();
 </script>
 </body>
 </html>
