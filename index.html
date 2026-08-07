@@ -189,6 +189,21 @@ let STORE_ID = null, STORE_NAME = '';
 let STORES = [], ITEMS = [];
 let BATCHES = [], RETURNS = [], MY_TRANSFERS = [], OTHER_BATCHES = [], MY_RECEIPTS = [];
 const TYPE_LABEL = { retail:'架上販售豆', brew:'門市沖煮豆', filter:'濾掛' };
+const CAT_META = {
+  G: { zh:'蜜處理・日曬' }, Y: { zh:'水洗' }, P: { zh:'自然發酵' }, R: { zh:'特殊發酵' },
+  B: { zh:'堅果奶油' }, T: { zh:'台灣競標' }, X: { zh:'配方豆' }, O: { zh:'其他' },
+};
+const CAT_ORDER = ['G','Y','P','R','B','T','X','O'];
+function itemSelectOptionsGrouped(items){
+  const groups = {};
+  items.forEach(it=>{ const c = it.category_code || ''; (groups[c] ||= []).push(it); });
+  const codes = [...CAT_ORDER, ''].filter(c=>groups[c] && groups[c].length);
+  return codes.map(c=>{
+    const label = c ? CAT_META[c].zh : '未分類';
+    const opts = groups[c].map(it=>`<option value="${it.id}">${it.name}</option>`).join('');
+    return `<optgroup label="${label}">${opts}</optgroup>`;
+  }).join('');
+}
 
 // ══════════ 登入（PIN，邏輯同門市採購系統） ══════════
 const PIN_LENGTH = 8;
@@ -597,7 +612,7 @@ function openAddBatchModal(type){
   ensureCounterName(()=>doOpenAddBatchModal(type));
 }
 function doOpenAddBatchModal(type){
-  const opts = ITEMS.map(i=>`<option value="${i.id}">${i.name}</option>`).join('');
+  const opts = itemSelectOptionsGrouped(ITEMS);
   const needsRoast = type !== 'filter';
   openModal(`
     <h3>新增庫存（${TYPE_LABEL[type]}）</h3>
