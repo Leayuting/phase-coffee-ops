@@ -248,7 +248,7 @@ function enterApp(){
 async function init(){
   await loadAll();
   subscribeRealtime();
-  setInterval(render, 30000);
+  setInterval(()=>{ if (!isEditingInput()) render(); }, 30000);
 }
 
 if (localStorage.getItem(SESSION_KEY) === '1'){ enterApp(); } else { showLogin(); }
@@ -296,8 +296,24 @@ async function loadAll(){
   render();
 }
 
-let reloadTimer=null;
-function scheduleReload(){ clearTimeout(reloadTimer); reloadTimer=setTimeout(loadAll,400); }
+// 正在輸入時（品項編輯/分配數量/備註等）不做背景重新整理，避免打字打到一半被蓋掉；
+// 離開輸入框後才補做一次，確保資料還是會同步。
+function isEditingInput(){
+  const el = document.activeElement;
+  if (!el) return false;
+  return el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.tagName==='SELECT';
+}
+let reloadTimer=null, pendingReload=false;
+function scheduleReload(){ clearTimeout(reloadTimer); reloadTimer=setTimeout(safeReload,400); }
+function safeReload(){
+  if (isEditingInput()){ pendingReload = true; return; }
+  pendingReload = false;
+  loadAll();
+}
+document.addEventListener('focusout', ()=>{
+  if (!pendingReload) return;
+  setTimeout(()=>{ if (!isEditingInput()){ pendingReload = false; loadAll(); } }, 150);
+});
 function subscribeRealtime(){
   const tables = ['stores','items','batches','returns','order_cycles','order_items','fulfillments','addon_requests'];
   const ch = sb.channel('factory-realtime');
