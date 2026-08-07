@@ -131,6 +131,7 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
   <button class="tab-btn" data-tab="brewboard" onclick="switchTab('brewboard')">沖煮豆總覽</button>
   <button class="tab-btn" data-tab="filterboard" onclick="switchTab('filterboard')">濾掛總覽</button>
   <button class="tab-btn" data-tab="transfers" onclick="switchTab('transfers')">調貨申請</button>
+  <button class="tab-btn" data-tab="announcements" onclick="switchTab('announcements')">系統公告</button>
   <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">系統設定</button>
 </div>
 <main>
@@ -139,6 +140,7 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
   <section id="tab-brewboard" class="tab-panel"></section>
   <section id="tab-filterboard" class="tab-panel"></section>
   <section id="tab-transfers" class="tab-panel"></section>
+  <section id="tab-announcements" class="tab-panel"></section>
   <section id="tab-settings" class="tab-panel"></section>
 </main>
 </div>
@@ -188,6 +190,7 @@ function todayStr(){ const p = taipeiParts(Date.now()); return dateStr(p.y,p.m,p
 // ══════════ STATE ══════════
 let STORES = [], ITEMS_ALL = [], ITEMS = [];
 let BATCHES = [], RETURNS = [], TRANSFERS = [];
+let ANNOUNCEMENTS = [], RECEIPTS = [];
 
 const DECISIONS = ['調回','變成出杯豆','報廢','其他'];
 
@@ -259,15 +262,18 @@ if (localStorage.getItem(SESSION_KEY) === '1'){ enterApp(); } else { showLogin()
 async function loadAll(){
   setSyncStatus('loading');
   try{
-    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers}] = await Promise.all([
+    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts}] = await Promise.all([
       sb.from('stores').select('*').order('sort_order'),
       sb.from('items').select('*').order('sort_order'),
       sb.from('batches').select('*').neq('status','disposed').order('roast_date'),
       sb.from('returns').select('*').order('submitted_at',{ascending:false}),
-      sb.from('transfer_requests').select('*').order('requested_at',{ascending:false})
+      sb.from('transfer_requests').select('*').order('requested_at',{ascending:false}),
+      sb.from('announcements').select('*').order('created_at',{ascending:false}),
+      sb.from('announcement_receipts').select('*')
     ]);
     STORES = stores || []; ITEMS_ALL = itemsAll || []; ITEMS = ITEMS_ALL.filter(i=>i.active);
     BATCHES = batches || []; RETURNS = returns || []; TRANSFERS = transfers || [];
+    ANNOUNCEMENTS = announcements || []; RECEIPTS = receipts || [];
     setSyncStatus('ok');
   }catch(e){ console.error(e); setSyncStatus('local'); }
   render();
@@ -292,7 +298,7 @@ document.addEventListener('focusout', ()=>{
   setTimeout(()=>{ if (!isEditingInput()){ pendingReload = false; loadAll(); } }, 150);
 });
 function subscribeRealtime(){
-  const tables = ['stores','items','batches','returns','transfer_requests'];
+  const tables = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts'];
   const ch = sb.channel('factory-realtime');
   tables.forEach(t=>ch.on('postgres_changes',{event:'*',schema:'public',table:t}, scheduleReload));
   ch.subscribe(s=>{
@@ -313,6 +319,7 @@ function render(){
   renderSimpleBoardTab('brew', 'brewboard', '跨店沖煮豆庫存看板');
   renderSimpleBoardTab('filter', 'filterboard', '跨店濾掛庫存看板');
   renderTransfersTab();
+  renderAnnouncementsTab();
   renderSettingsTab();
 }
 function itemName(id){ const it = ITEMS_ALL.find(i=>i.id===id); return it ? it.name : '（已刪除品項）'; }
@@ -652,6 +659,61 @@ async function decideTransfer(id, status){
   toast(status==='approved' ? '已核准' : '已拒絕'); loadAll();
 }
 
+// ══════════ 系統公告 ══════════
+function renderAnnouncementsTab(){
+  const el = document.getElementById('tab-announcements');
+  const storeChecks = STORES.map(s=>`
+    <label style="display:inline-flex;align-items:center;gap:5px;margin-right:14px;font-size:13px;font-weight:400;">
+      <input type="checkbox" class="ann-store-check" value="${s.id}" checked> ${s.name}
+    </label>`).join('');
+  el.innerHTML = `
+    <div class="section">
+      <h2>發布公告</h2>
+      <div class="field"><label>標題（選填）</label><input type="text" id="annTitle" placeholder="公告標題"></div>
+      <div class="field"><label>內容</label><textarea id="annContent" placeholder="公告內容…" style="min-height:90px;"></textarea></div>
+      <div class="field"><label>發送對象</label><div>${storeChecks}</div></div>
+      <button class="btn" onclick="publishAnnouncement()">發布公告</button>
+    </div>
+    <div class="section">
+      <h2>公告紀錄</h2>
+      ${renderAnnouncementHistory()}
+    </div>`;
+}
+function renderAnnouncementHistory(){
+  if (!ANNOUNCEMENTS.length) return `<div class="empty-msg">尚無公告</div>`;
+  return ANNOUNCEMENTS.map(a=>{
+    const receipts = RECEIPTS.filter(r=>r.announcement_id===a.id);
+    const receivedCount = receipts.filter(r=>r.received_at).length;
+    return `<div class="item-block">
+      <div class="item-block-title">${a.title ? a.title+'　' : ''}<span style="font-weight:400;color:var(--gray-50);font-size:12px;">${fmtDT(new Date(a.created_at).getTime())}｜已接收 ${receivedCount}/${receipts.length}</span></div>
+      <div style="font-size:13px;margin-bottom:8px;white-space:pre-wrap;">${a.content}</div>
+      <table>
+        <thead><tr><th>門店</th><th>狀態</th><th>接收人</th><th>接收時間</th></tr></thead>
+        <tbody>${receipts.map(r=>`
+          <tr>
+            <td data-label="門店">${storeName(r.store_id)}</td>
+            <td data-label="狀態">${r.received_at ? '<span class="status-pill status-approved">已接收</span>' : '<span class="status-pill status-pending">未接收</span>'}</td>
+            <td data-label="接收人">${r.received_by||'—'}</td>
+            <td data-label="接收時間">${r.received_at ? fmtDT(new Date(r.received_at).getTime()) : '—'}</td>
+          </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+}
+async function publishAnnouncement(){
+  const title = document.getElementById('annTitle').value.trim();
+  const content = document.getElementById('annContent').value.trim();
+  const targetStores = Array.from(document.querySelectorAll('.ann-store-check:checked')).map(el=>el.value);
+  if (!content){ toast('請輸入公告內容'); return; }
+  if (!targetStores.length){ toast('請至少選擇一間門店'); return; }
+  const { data, error } = await sb.from('announcements').insert({ title:title||null, content }).select().single();
+  if (error){ toast('發布失敗：'+error.message); return; }
+  const receiptRows = targetStores.map(storeId => ({ announcement_id:data.id, store_id:storeId }));
+  const { error:e2 } = await sb.from('announcement_receipts').insert(receiptRows);
+  if (e2){ toast('發布失敗：'+e2.message); return; }
+  toast('已發布公告'); loadAll();
+}
+
 // ══════════ 系統設定：重設登入 PIN ══════════
 function renderSettingsTab(){
   const el = document.getElementById('tab-settings');
@@ -709,7 +771,7 @@ document.addEventListener('click', e=>{
   if (!menu) return;
   if (!e.target.closest('#backupMenu') && e.target.tagName!=='BUTTON'){ menu.style.display='none'; }
 });
-const BACKUP_TABLES = ['stores','items','batches','returns','store_pins','factory_auth','transfer_requests'];
+const BACKUP_TABLES = ['stores','items','batches','returns','store_pins','factory_auth','transfer_requests','announcements','announcement_receipts'];
 const BACKUP_CONFLICT_KEY = { store_pins:'store_id' };
 async function exportBackup(){
   toggleBackupMenu();
