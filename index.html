@@ -398,13 +398,9 @@ function openRecallModal(){
       <div class="addon-item" id="recall-item-${r.id}">
         <div>${itemName(r.item_id)} × ${r.quantity}（烘焙 ${r.roast_date}）<br>
           <span style="color:var(--gray-50)">工廠處置：${r.factory_decision||'—'}${r.decision_note ? '（'+r.decision_note+'）' : ''}</span></div>
-        <button class="btn-sm" onclick="markReturnDoneFromModal(${r.id}, ${r.batch_id})">標記完成</button>
+        <button class="btn-sm" onclick="promptCompleteReturn(${r.id}, ${r.batch_id}, true)">標記完成</button>
       </div>`).join('')}</div>
     <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">稍後再處理</button></div>`);
-}
-async function markReturnDoneFromModal(returnId, batchId){
-  await markReturnDone(returnId, batchId);
-  if (!pendingReturns().length) closeModal(); else openRecallModal();
 }
 
 function renderTab(type){
@@ -519,21 +515,35 @@ function renderReturnList(){
   return RETURNS.map(r=>`
     <div class="addon-item">
       <div>${itemName(r.item_id)} × ${r.quantity}（烘焙 ${r.roast_date}）<br>
-        <span style="color:var(--gray-50)">工廠處置：${r.factory_decision||'—'}${r.decision_note ? '（'+r.decision_note+'）' : ''}</span></div>
+        <span style="color:var(--gray-50)">工廠處置：${r.factory_decision||'—'}${r.decision_note ? '（'+r.decision_note+'）' : ''}${r.completed_by ? '　由 '+r.completed_by+' 完成' : ''}</span></div>
       ${r.status==='pending'
-        ? `<button class="btn-sm" onclick="markReturnDone(${r.id}, ${r.batch_id})">標記完成</button>`
+        ? `<button class="btn-sm" onclick="promptCompleteReturn(${r.id}, ${r.batch_id}, false)">標記完成</button>`
         : `<span class="status-pill ${cls[r.status]}">${label[r.status]}</span>`}
     </div>`).join('');
 }
-async function markReturnDone(returnId, batchId){
-  if (!confirm('確認已依工廠指示完成處理？')) return;
-  const { error:e1 } = await sb.from('returns').update({ status:'decided', decided_at:new Date().toISOString() }).eq('id', returnId);
+function promptCompleteReturn(returnId, batchId, backToList){
+  const r = RETURNS.find(x=>x.id===returnId);
+  if (!r) return;
+  openModal(`
+    <h3>標記完成</h3>
+    <div class="field"><label>項目</label><div>${itemName(r.item_id)} × ${r.quantity}（烘焙 ${r.roast_date}）</div></div>
+    <div class="field"><label>經手人姓名（以示負責）</label><input type="text" id="completeByName" placeholder="請輸入姓名"></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="${backToList ? 'openRecallModal()' : 'closeModal()'}">取消</button>
+      <button class="btn" onclick="confirmCompleteReturn(${returnId}, ${batchId}, ${backToList})">確認完成</button>
+    </div>`);
+}
+async function confirmCompleteReturn(returnId, batchId, backToList){
+  const name = document.getElementById('completeByName').value.trim();
+  if (!name){ toast('請輸入姓名'); return; }
+  const { error:e1 } = await sb.from('returns').update({ status:'decided', decided_at:new Date().toISOString(), completed_by:name }).eq('id', returnId);
   if (e1){ toast('更新失敗：'+e1.message); return; }
   if (batchId){
     const { error:e2 } = await sb.from('batches').update({ status:'disposed', updated_at:new Date().toISOString() }).eq('id', batchId);
     if (e2){ toast('更新失敗：'+e2.message); return; }
   }
   toast('已標記完成'); await loadAll();
+  if (backToList && pendingReturns().length) openRecallModal(); else closeModal();
 }
 
 // ══════════ MODALS ══════════
