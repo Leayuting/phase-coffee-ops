@@ -25,6 +25,8 @@ header{background:var(--black);color:var(--white);padding:16px 18px;display:flex
 header .store-name{font-size:18px;font-weight:600;letter-spacing:.02em;}
 header .sync{margin-left:auto;font-size:11px;color:var(--gray-50);white-space:nowrap;}
 .recall-banner{background:var(--danger);color:#fff;font-size:13.5px;font-weight:600;padding:10px 16px;text-align:center;cursor:pointer;}
+.counter-bar{background:var(--gray-10);color:var(--gray-70);font-size:12.5px;padding:7px 16px;text-align:center;cursor:pointer;}
+.counter-bar b{color:var(--black);}
 .tabs{display:flex;background:#fff;border-bottom:1px solid var(--gray-20);position:sticky;top:56px;z-index:49;}
 .tab-btn{flex:1;padding:13px 8px;border:none;background:none;font-size:14.5px;font-weight:600;color:var(--gray-50);border-bottom:3px solid transparent;font-family:inherit;}
 .tab-btn.active{color:var(--black);border-bottom-color:var(--accent);}
@@ -110,6 +112,7 @@ tr.batch-row.pending{opacity:.6;}
     </div>
   </header>
   <div id="recallBanner" class="recall-banner" style="display:none;" onclick="openRecallModal()"></div>
+  <div id="counterBar" class="counter-bar" onclick="openCounterNameModal()"></div>
   <div class="tabs">
     <button class="tab-btn active" data-tab="retail" onclick="switchTab('retail')">架上販售豆</button>
     <button class="tab-btn" data-tab="brew" onclick="switchTab('brew')">門市沖煮豆</button>
@@ -256,9 +259,46 @@ function enterStore(storeId){
   document.getElementById('pickerRoot').style.display = 'none';
   document.getElementById('storeName').textContent = STORE_NAME;
   document.getElementById('appRoot').style.display = 'block';
+  loadCounterName();
   loadAll();
   subscribeRealtime();
   setInterval(()=>{ if (!isEditingInput()) render(); }, 30000);
+}
+
+// ══════════ 盤點負責人 ══════════
+let counterName = null, pendingCounterCallback = null;
+function counterKey(){ return 'phase_coffee_counter_'+STORE_ID; }
+function loadCounterName(){
+  counterName = localStorage.getItem(counterKey()) || null;
+  renderCounterBar();
+}
+function renderCounterBar(){
+  const el = document.getElementById('counterBar');
+  el.textContent = counterName ? `盤點人：${counterName}（點此更換）` : '尚未設定盤點人，點此設定';
+}
+function ensureCounterName(onReady){
+  if (counterName){ onReady(); return; }
+  pendingCounterCallback = onReady;
+  openCounterNameModal();
+}
+function openCounterNameModal(){
+  openModal(`
+    <h3>設定盤點人</h3>
+    <div class="field"><label>姓名（以示負責，庫存異動會記錄此姓名並回報工廠端）</label>
+      <input type="text" id="counterNameInput" placeholder="請輸入姓名" value="${counterName||''}"></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="pendingCounterCallback=null; closeModal();">取消</button>
+      <button class="btn" onclick="confirmCounterName()">確認</button>
+    </div>`);
+}
+function confirmCounterName(){
+  const name = document.getElementById('counterNameInput').value.trim();
+  if (!name){ toast('請輸入姓名'); return; }
+  counterName = name;
+  localStorage.setItem(counterKey(), name);
+  renderCounterBar();
+  closeModal();
+  if (pendingCounterCallback){ const cb = pendingCounterCallback; pendingCounterCallback = null; cb(); }
 }
 
 async function loadAll(){
@@ -388,16 +428,23 @@ function renderBatchRow(b, type){
       onchange="updateBatchQty(${b.id}, this.value)"></td>
   </tr>`;
 }
-async function updateBatchQty(id, val){
+function updateBatchQty(id, val){
+  ensureCounterName(()=>doUpdateBatchQty(id, val));
+}
+async function doUpdateBatchQty(id, val){
   const q = Number(val); if (isNaN(q) || q<0) return;
-  await sb.from('batches').update({ quantity:q, updated_at:new Date().toISOString() }).eq('id', id);
-  toast('已更新數量');
+  const now = new Date().toISOString();
+  await sb.from('batches').update({ quantity:q, updated_at:now, last_counted_by:counterName, last_counted_at:now }).eq('id', id);
+  toast(`已更新數量（盤點人：${counterName}）`);
 }
 function todayStr(){
   const p = taipeiParts(Date.now());
   return `${p.y}-${String(p.m+1).padStart(2,'0')}-${String(p.d).padStart(2,'0')}`;
 }
 function openAddBatchModal(type){
+  ensureCounterName(()=>doOpenAddBatchModal(type));
+}
+function doOpenAddBatchModal(type){
   const opts = ITEMS.map(i=>`<option value="${i.id}">${i.name}</option>`).join('');
   openModal(`
     <h3>新增庫存（${type==='retail'?'架上販售豆':'門市沖煮豆'}）</h3>
@@ -414,7 +461,8 @@ async function saveAddBatch(type){
   const roast_date = document.getElementById('nbRoast').value;
   const quantity = Number(document.getElementById('nbQty').value||0);
   if (!roast_date || quantity<0){ toast('請填寫完整資料'); return; }
-  const { error } = await sb.from('batches').insert({ store_id:STORE_ID, item_id, channel:type, roast_date, quantity, status:'active', source:'manual' });
+  const now = new Date().toISOString();
+  const { error } = await sb.from('batches').insert({ store_id:STORE_ID, item_id, channel:type, roast_date, quantity, status:'active', source:'manual', last_counted_by:counterName, last_counted_at:now });
   if (error){ toast('新增失敗：'+error.message); return; }
   closeModal(); toast('已新增庫存'); loadAll();
 }

@@ -420,7 +420,7 @@ function renderBrewBoardTab(){
               const list = byItem[itemId].filter(b=>b.store_id===st.id).sort((a,b)=>a.roast_date.localeCompare(b.roast_date));
               return `<div class="store-col">
                 <div class="store-label">${st.name}</div>
-                ${list.length ? list.map(b=>`<div class="batch-line">${b.roast_date}（${ageDaysOf(b.roast_date, Date.now())}天）× ${b.quantity}</div>`).join('') : `<div class="empty-msg" style="padding:2px;">無庫存</div>`}
+                ${list.length ? list.map(b=>`<div class="batch-line">${b.roast_date}（${ageDaysOf(b.roast_date, Date.now())}天）× ${b.quantity}${countedInfoHtml(b)}</div>`).join('') : `<div class="empty-msg" style="padding:2px;">無庫存</div>`}
               </div>`;
             }).join('')}
           </div>
@@ -480,6 +480,10 @@ function renderReturnHistory(){
     </tbody>
   </table>`;
 }
+function countedInfoHtml(b){
+  if (!b.last_counted_by) return '';
+  return `<div style="color:var(--gray-50);font-size:11px;margin-top:2px;">盤點：${b.last_counted_by}・${fmtDT(new Date(b.last_counted_at).getTime())}</div>`;
+}
 function renderAlertBatchLine(b){
   const age = ageDaysOf(b.roast_date, Date.now());
   let cls = '';
@@ -489,10 +493,12 @@ function renderAlertBatchLine(b){
     return `<div class="batch-line ${cls}">
       ${b.roast_date}（${age}天）× ${b.quantity}
       <div style="margin-top:4px;color:var(--gray-70);font-size:12px;">已通知門店：${b.disposal_action||''}${b.disposal_note?'（'+b.disposal_note+'）':''}，待門店完成</div>
+      ${countedInfoHtml(b)}
     </div>`;
   }
   return `<div class="batch-line ${cls}">
     ${b.roast_date}（${age}天）× ${b.quantity}
+    ${countedInfoHtml(b)}
     <button class="btn-sm" style="margin-left:6px;" onclick="toggleRecallForm(${b.id})">發起回收</button>
     <div id="recall-form-${b.id}" style="display:none;margin-top:6px;">
       <div id="alloc-rows-${b.id}">${allocRowHtml(b.id, DECISIONS[0], b.quantity, '')}</div>
