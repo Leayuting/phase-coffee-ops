@@ -194,6 +194,7 @@ const DECISIONS = ['調回','變成出杯豆','報廢','其他'];
 // ══════════ 登入（PIN，邏輯同門市採購系統） ══════════
 const PIN_LENGTH = 8;
 const SESSION_KEY = 'phase_coffee_factory_session';
+const LAST_TAB_KEY = 'phase_coffee_factory_lasttab';
 async function sha256Hex(text){
   const enc = new TextEncoder().encode(text);
   const buf = await crypto.subtle.digest('SHA-256', enc);
@@ -300,7 +301,6 @@ function subscribeRealtime(){
   });
 }
 
-const LAST_TAB_KEY = 'phase_coffee_factory_lasttab';
 function switchTab(tab){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active', p.id==='tab-'+tab));
