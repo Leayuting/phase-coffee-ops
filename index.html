@@ -116,10 +116,12 @@ tr.batch-row.pending{opacity:.6;}
   <div class="tabs">
     <button class="tab-btn active" data-tab="retail" onclick="switchTab('retail')">架上販售豆</button>
     <button class="tab-btn" data-tab="brew" onclick="switchTab('brew')">門市沖煮豆</button>
+    <button class="tab-btn" data-tab="filter" onclick="switchTab('filter')">濾掛</button>
   </div>
   <main>
     <section id="tab-retail" class="tab-panel active"></section>
     <section id="tab-brew" class="tab-panel"></section>
+    <section id="tab-filter" class="tab-panel"></section>
   </main>
 </div>
 
@@ -166,6 +168,7 @@ function ageDaysOf(roastDateStr, nowMs){
 let STORE_ID = null, STORE_NAME = '';
 let STORES = [], ITEMS = [];
 let BATCHES = [], RETURNS = [];
+const TYPE_LABEL = { retail:'架上販售豆', brew:'門市沖煮豆', filter:'濾掛' };
 
 // ══════════ 登入（PIN，邏輯同門市採購系統） ══════════
 const PIN_LENGTH = 8;
@@ -356,7 +359,7 @@ function switchTab(tab){
 
 // ══════════ RENDER ══════════
 function render(){
-  ['retail','brew'].forEach(renderTab);
+  ['retail','brew','filter'].forEach(renderTab);
   checkRecallNotifications();
 }
 
@@ -447,7 +450,7 @@ function openAddBatchModal(type){
 function doOpenAddBatchModal(type){
   const opts = ITEMS.map(i=>`<option value="${i.id}">${i.name}</option>`).join('');
   openModal(`
-    <h3>新增庫存（${type==='retail'?'架上販售豆':'門市沖煮豆'}）</h3>
+    <h3>新增庫存（${TYPE_LABEL[type]}）</h3>
     <div class="field"><label>品項</label><select id="nbItem">${opts}</select></div>
     <div class="field"><label>烘焙日期</label><input type="date" id="nbRoast" value="${todayStr()}"></div>
     <div class="field"><label>包數</label><input type="number" id="nbQty" min="0" value="1"></div>
