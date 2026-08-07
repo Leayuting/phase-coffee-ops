@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>PHASE｜門店盤點下單</title>
+<link rel="manifest" href="manifest-store.json">
+<link rel="icon" type="image/png" href="icons/store-192.png">
+<link rel="apple-touch-icon" href="icons/store-192.png">
+<meta name="theme-color" content="#2C4A3E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="門店下單">
+<style>
+:root{
+  --black:#111111; --gray-90:#1a1a1a; --gray-70:#4a4a4a; --gray-50:#888888;
+  --gray-30:#c4c4c4; --gray-20:#d0d0d0; --gray-10:#e6e6e6; --gray-08:#f0f0f0; --white:#fafafa;
+  --accent:#3D2A1C;
+  --ok:#4caf7d; --warn:#e8a040; --danger:#c0453a;
+  --yellow-bg:#fdf3d8; --yellow-bd:#e8c43a;
+  --red-bg:#fbe4e1; --red-bd:#c0453a;
+  --radius:8px; --font:system-ui,-apple-system,'PingFang TC','Noto Sans TC',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{font-family:var(--font);background:var(--gray-08);color:var(--black);font-size:15px;line-height:1.55;padding-bottom:60px;}
+header{background:var(--black);color:var(--white);padding:16px 18px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:50;}
+header .store-name{font-size:18px;font-weight:600;letter-spacing:.02em;}
+header .sync{margin-left:auto;font-size:11px;color:var(--gray-50);white-space:nowrap;}
+.tabs{display:flex;background:#fff;border-bottom:1px solid var(--gray-20);position:sticky;top:56px;z-index:49;}
+.tab-btn{flex:1;padding:13px 8px;border:none;background:none;font-size:14.5px;font-weight:600;color:var(--gray-50);border-bottom:3px solid transparent;font-family:inherit;}
+.tab-btn.active{color:var(--black);border-bottom-color:var(--accent);}
+main{max-width:640px;margin:0 auto;}
+.tab-panel{display:none;padding:14px;}
+.tab-panel.active{display:block;}
+.banner{border-radius:var(--radius);padding:12px 14px;margin-bottom:14px;font-size:13.5px;display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.banner.open{background:#e3f3ea;color:#2c6e4a;}
+.banner.locked{background:var(--gray-10);color:var(--gray-70);}
+.banner b{font-weight:700;}
+.section{background:#fff;border-radius:var(--radius);padding:14px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.05);}
+.section h2{font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:9px 14px;font-size:13.5px;font-weight:600;font-family:inherit;}
+.btn:disabled{background:var(--gray-30);color:var(--gray-50);}
+.btn-sm{background:none;color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:5px 10px;font-size:12.5px;font-weight:600;font-family:inherit;}
+.btn-outline{background:none;border:1px solid var(--gray-30);color:var(--gray-70);border-radius:6px;padding:6px 10px;font-size:12.5px;font-family:inherit;}
+.btn-danger-outline{background:none;border:1px solid var(--danger);color:var(--danger);border-radius:6px;padding:6px 10px;font-size:12.5px;font-family:inherit;}
+.item-group{border-top:1px solid var(--gray-08);padding-top:10px;margin-top:10px;}
+.item-group:first-child{border-top:none;padding-top:0;margin-top:0;}
+.item-group-title{font-weight:700;font-size:14px;margin-bottom:6px;}
+.batch-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;background:var(--gray-08);margin-bottom:6px;font-size:13px;}
+.batch-row.age-yellow{background:var(--yellow-bg);border:1px solid var(--yellow-bd);}
+.batch-row.age-red{background:var(--red-bg);border:1px solid var(--red-bd);}
+.batch-row.pending{opacity:.6;}
+.batch-info{flex:1;min-width:0;}
+.batch-info .roast{color:var(--gray-70);font-size:12px;}
+.batch-info .badge{display:inline-block;font-size:11px;padding:1px 6px;border-radius:10px;background:var(--gray-30);color:#fff;margin-left:4px;}
+.batch-qty-input{width:56px;padding:5px;border:1px solid var(--gray-20);border-radius:5px;font-size:13px;text-align:center;}
+.empty-msg{color:var(--gray-50);font-size:13px;padding:8px 2px;}
+.order-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--gray-08);}
+.order-row:first-child{border-top:none;}
+.order-row .name{flex:1;font-size:14px;}
+.order-row input{width:64px;padding:6px;border:1px solid var(--gray-20);border-radius:5px;font-size:14px;text-align:center;}
+.order-row input:disabled{background:var(--gray-08);color:var(--gray-50);}
+.footer-actions{margin-top:12px;display:flex;justify-content:flex-end;}
+.addon-item{border-top:1px solid var(--gray-08);padding:8px 0;font-size:13px;display:flex;justify-content:space-between;gap:8px;}
+.status-pill{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;white-space:nowrap;}
+.status-pending{background:var(--yellow-bg);color:#8a6d1a;}
+.status-approved{background:#e3f3ea;color:#2c6e4a;}
+.status-rejected{background:var(--red-bg);color:var(--danger);}
+.status-decided{background:var(--gray-10);color:var(--gray-70);}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:flex-end;justify-content:center;z-index:200;}
+.overlay.show{display:flex;}
+.modal{background:#fff;border-radius:14px 14px 0 0;width:100%;max-width:640px;padding:18px;max-height:88vh;overflow:auto;}
+.modal h3{font-size:16px;margin-bottom:14px;}
+.field{margin-bottom:12px;}
+.field label{display:block;font-size:12.5px;color:var(--gray-70);margin-bottom:4px;font-weight:600;}
+.field select,.field input,.field textarea{width:100%;padding:9px 10px;border:1px solid var(--gray-20);border-radius:6px;font-size:14.5px;font-family:inherit;}
+.field textarea{resize:vertical;min-height:60px;}
+.modal-actions{display:flex;gap:8px;margin-top:16px;}
+.modal-actions .btn,.modal-actions .btn-outline{flex:1;text-align:center;}
+.picker{padding:40px 18px;text-align:center;}
+.picker h1{font-size:18px;margin-bottom:20px;}
+.picker a{display:block;background:#fff;border-radius:var(--radius);padding:16px;margin-bottom:10px;text-decoration:none;color:var(--black);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+.legend{font-size:11.5px;color:var(--gray-50);margin-bottom:10px;display:flex;gap:12px;flex-wrap:wrap;}
+.legend span{display:inline-flex;align-items:center;gap:4px;}
+.legend i{width:9px;height:9px;border-radius:2px;display:inline-block;}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--black);color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:300;opacity:0;transition:opacity .2s;pointer-events:none;}
+.toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<div id="pickerRoot" style="display:none" class="picker">
+  <h1>PHASE｜門店盤點下單系統</h1>
+  <p style="color:var(--gray-50);font-size:13px;margin-bottom:20px;">請選擇門店</p>
+  <div id="pickerList"></div>
+</div>
+
+<div id="appRoot" style="display:none">
+  <header>
+    <div class="store-name" id="storeName">—</div>
+    <div class="sync" id="syncStatus">連線中</div>
+    <div style="position:relative;">
+      <button onclick="toggleBackupMenu()" style="background:none;border:none;color:#fff;font-size:18px;padding:2px 6px;">⋯</button>
+      <div id="backupMenu" style="display:none;position:absolute;right:0;top:28px;background:#fff;color:var(--black);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.2);min-width:150px;z-index:60;overflow:hidden;">
+        <button onclick="exportBackup()" style="display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:none;font-size:13px;font-family:inherit;">⬇ 匯出本店資料</button>
+      </div>
+    </div>
+  </header>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="retail" onclick="switchTab('retail')">架上販售豆</button>
+    <button class="tab-btn" data-tab="brew" onclick="switchTab('brew')">門市沖煮豆</button>
+  </div>
+  <main>
+    <section id="tab-retail" class="tab-panel active"></section>
+    <section id="tab-brew" class="tab-panel"></section>
+  </main>
+</div>
+
+<div class="overlay" id="overlay"><div class="modal" id="modalBody"></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ══════════ SUPABASE ══════════
+const SB_URL = "https://ydcniebqwwkozddoiujr.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlkY25pZWJxd3drb3pkZG9pdWpyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYwNzY5NDUsImV4cCI6MjEwMTY1Mjk0NX0.Tyf4_Rx4l9YLvNd2jdnITuarA9StV2rQK0jT0nOrs6c";
+const { createClient } = supabase;
+const sb = createClient(SB_URL, SB_KEY);
+
+function setSyncStatus(state){
+  const el = document.getElementById('syncStatus');
+  const map = { ok:['● 即時同步','#7bc99e'], local:['○ 離線','#e8a040'], loading:['⟳ 連線中','#999'] };
+  const [text,color] = map[state] || map.loading;
+  el.textContent = text; el.style.color = color;
+}
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+// ══════════ TAIPEI TIME HELPERS (UTC+8 fixed, no DST) ══════════
+function taipeiShifted(nowMs){ return new Date(nowMs + 8*3600*1000); }
+function taipeiParts(nowMs){
+  const s = taipeiShifted(nowMs);
+  return { y:s.getUTCFullYear(), m:s.getUTCMonth(), d:s.getUTCDate(), dow:s.getUTCDay() };
+}
+function taipeiDateToUtcMs(y,m,d,hh=0,mm=0){ return Date.UTC(y,m,d,hh,mm,0) - 8*3600*1000; }
+function dateStr(y,m,d){ return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+
+// retail: most recent Sunday <= today; lock = 隔日(週一) 10:30 台北時間
+// brew:   most recent Wednesday <= today; lock = 隔日(週四) 10:30 台北時間
+function currentCycleWindow(type, nowMs){
+  const p = taipeiParts(nowMs);
+  const targetDow = type === 'retail' ? 0 : 3;
+  const back = (p.dow - targetDow + 7) % 7;
+  const anchorShiftedMs = taipeiShifted(nowMs).getTime() - back*86400000;
+  const a = new Date(anchorShiftedMs);
+  const ay=a.getUTCFullYear(), am=a.getUTCMonth(), ad=a.getUTCDate();
+  const weekStart = dateStr(ay,am,ad);
+  const lockAtMs = taipeiDateToUtcMs(ay,am,ad+1,10,30);
+  return { weekStart, lockAtMs };
+}
+function fmtDT(ms){
+  const p = taipeiParts(ms);
+  const hh = new Date(taipeiShifted(ms)).getUTCHours(), mi = new Date(taipeiShifted(ms)).getUTCMinutes();
+  return `${p.m+1}/${p.d} ${String(hh).padStart(2,'0')}:${String(mi).padStart(2,'0')}`;
+}
+function todayTaipeiMidnightMs(nowMs){
+  const p = taipeiParts(nowMs);
+  return Date.UTC(p.y,p.m,p.d,0,0,0);
+}
+function ageDaysOf(roastDateStr, nowMs){
+  const [ry,rm,rd] = roastDateStr.split('-').map(Number);
+  return Math.floor((todayTaipeiMidnightMs(nowMs) - Date.UTC(ry,rm-1,rd,0,0,0)) / 86400000);
+}
+
+// ══════════ STATE ══════════
+let STORE_ID = null, STORE_NAME = '';
+let STORES = [], ITEMS = [];
+let BATCHES = [], RETURNS = [];
+let CYCLES = { retail:null, brew:null };
+let ORDER_ITEMS = { retail:{}, brew:{} };   // item_id -> quantity
+let ORDER_ROWS  = { retail:{}, brew:{} };   // item_id -> order_item row (for id lookup)
+let ADDONS = { retail:[], brew:[] };
+
+const TYPE_LABEL = { retail:'架上販售豆', brew:'門市沖煮豆' };
+
+// ══════════ INIT ══════════
+async function init(){
+  const params = new URLSearchParams(location.search);
+  const s = params.get('store');
+  const { data: storeRows } = await sb.from('stores').select('*').order('sort_order');
+  STORES = storeRows || [];
+  if (!s || !STORES.find(x=>x.id===s)){
+    showPicker(); return;
+  }
+  STORE_ID = s;
+  STORE_NAME = STORES.find(x=>x.id===s).name;
+  document.getElementById('storeName').textContent = STORE_NAME;
+  document.getElementById('appRoot').style.display = 'block';
+  await loadAll();
+  subscribeRealtime();
+  setInterval(()=>{ render(); }, 30000); // refresh countdown/lock state
+}
+function showPicker(){
+  document.getElementById('pickerRoot').style.display = 'block';
+  document.getElementById('pickerList').innerHTML = STORES.map(st =>
+    `<a href="?store=${st.id}">${st.name}</a>`).join('');
+}
+
+async function ensureCycle(type){
+  const nowMs = Date.now();
+  const { weekStart, lockAtMs } = currentCycleWindow(type, nowMs);
+  const { data, error } = await sb.from('order_cycles')
+    .upsert({ store_id: STORE_ID, type, week_start: weekStart, lock_at: new Date(lockAtMs).toISOString() },
+            { onConflict: 'store_id,type,week_start', ignoreDuplicates: true })
+    .select();
+  let row = (data && data[0]);
+  if (!row){
+    const { data: existing } = await sb.from('order_cycles').select('*')
+      .eq('store_id', STORE_ID).eq('type', type).eq('week_start', weekStart).maybeSingle();
+    row = existing;
+  }
+  CYCLES[type] = row;
+}
+
+async function loadAll(){
+  setSyncStatus('loading');
+  try{
+    const [{data:items}, {data:batches}, {data:returns}] = await Promise.all([
+      sb.from('items').select('*').eq('active', true).order('sort_order'),
+      sb.from('batches').select('*').eq('store_id', STORE_ID).neq('status','disposed').order('roast_date'),
+      sb.from('returns').select('*').eq('store_id', STORE_ID).order('submitted_at', {ascending:false})
+    ]);
+    ITEMS = items || []; BATCHES = batches || []; RETURNS = returns || [];
+
+    await Promise.all(['retail','brew'].map(ensureCycle));
+
+    for (const type of ['retail','brew']){
+      const cid = CYCLES[type]?.id;
+      const [{data:oi}, {data:ad}] = await Promise.all([
+        cid ? sb.from('order_items').select('*').eq('cycle_id', cid) : Promise.resolve({data:[]}),
+        sb.from('addon_requests').select('*').eq('store_id', STORE_ID).eq('type', type).order('requested_at',{ascending:false})
+      ]);
+      ORDER_ITEMS[type] = {}; ORDER_ROWS[type] = {};
+      (oi||[]).forEach(r=>{ ORDER_ITEMS[type][r.item_id]=r.quantity; ORDER_ROWS[type][r.item_id]=r; });
+      ADDONS[type] = ad || [];
+    }
+    setSyncStatus('ok');
+  }catch(e){ console.error(e); setSyncStatus('local'); }
+  render();
+}
+
+let reloadTimer = null;
+function scheduleReload(){
+  clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(loadAll, 400);
+}
+function subscribeRealtime(){
+  const tables = ['items','batches','returns','order_cycles','order_items','addon_requests'];
+  const ch = sb.channel('store-realtime-'+STORE_ID);
+  tables.forEach(t=>{
+    ch.on('postgres_changes', { event:'*', schema:'public', table:t }, scheduleReload);
+  });
+  ch.subscribe(s=>{
+    if (s==='SUBSCRIBED') setSyncStatus('ok');
+    else if (s==='CHANNEL_ERROR') setSyncStatus('local');
+  });
+}
+
+// ══════════ TABS ══════════
+function switchTab(tab){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active', p.id==='tab-'+tab));
+}
+
+// ══════════ RENDER ══════════
+function render(){
+  ['retail','brew'].forEach(renderTab);
+}
+
+function renderTab(type){
+  const el = document.getElementById('tab-'+type);
+  const cycle = CYCLES[type];
+  const locked = !cycle || Date.now() >= new Date(cycle.lock_at).getTime();
+  const bannerHtml = cycle
+    ? (locked
+        ? `<div class="banner locked"><span>本週${TYPE_LABEL[type]}訂單已鎖單（${fmtDT(new Date(cycle.lock_at).getTime())}）</span></div>`
+        : `<div class="banner open"><span>下單開放中，<b>${fmtDT(new Date(cycle.lock_at).getTime())}</b> 鎖單</span></div>`)
+    : `<div class="banner locked"><span>載入中…</span></div>`;
+
+  el.innerHTML = `
+    ${bannerHtml}
+    <div class="section">
+      <h2>本店庫存<button class="btn-sm" onclick="openAddBatch('${type}')">＋ 新增批次</button></h2>
+      ${type==='retail' ? `<div class="legend"><span><i style="background:var(--yellow-bd)"></i>烘焙14–20天</span><span><i style="background:var(--red-bd)"></i>烘焙21天以上</span></div>` : ''}
+      <div id="${type}-batchList">${renderBatchList(type)}</div>
+    </div>
+    <div class="section">
+      <h2>本週下單（${TYPE_LABEL[type]}）</h2>
+      <div id="${type}-orderForm">${renderOrderForm(type, locked)}</div>
+      <div class="footer-actions">
+        <button class="btn" ${locked?'disabled':''} onclick="submitOrder('${type}')">送出下單</button>
+      </div>
+    </div>
+    ${locked ? `
+    <div class="section">
+      <h2>追加申請<button class="btn-sm" onclick="openAddon('${type}')">＋ 提出申請</button></h2>
+      <div id="${type}-addonList">${renderAddonList(type)}</div>
+    </div>` : ''}
+    ${type==='retail' ? `
+    <div class="section">
+      <h2>換貨／回收紀錄</h2>
+      <div id="retail-returnList">${renderReturnList()}</div>
+    </div>` : ''}
+  `;
+}
+
+function itemName(id){ const it = ITEMS.find(i=>i.id===id); return it ? it.name : '（已停用品項）'; }
+
+function renderBatchList(type){
+  const rows = BATCHES.filter(b=>b.channel===type);
+  if (!rows.length) return `<div class="empty-msg">目前沒有登記中的批次</div>`;
+  const byItem = {};
+  rows.forEach(b=>{ (byItem[b.item_id] ||= []).push(b); });
+  const order = ITEMS.map(i=>i.id).filter(id=>byItem[id]);
+  return order.map(itemId=>{
+    const list = byItem[itemId].sort((a,b)=>a.roast_date.localeCompare(b.roast_date));
+    return `<div class="item-group">
+      <div class="item-group-title">${itemName(itemId)}</div>
+      ${list.map(b=>renderBatchRow(b,type)).join('')}
+    </div>`;
+  }).join('');
+}
+function renderBatchRow(b, type){
+  const age = ageDaysOf(b.roast_date, Date.now());
+  let ageClass = '';
+  if (type==='retail'){ if (age>=21) ageClass='age-red'; else if (age>=14) ageClass='age-yellow'; }
+  const pending = b.status==='return_pending';
+  return `<div class="batch-row ${ageClass} ${pending?'pending':''}">
+    <div class="batch-info">
+      <div>烘焙 ${b.roast_date} <span class="roast">（${age}天）</span>${pending?'<span class="badge">回收處理中</span>':''}</div>
+    </div>
+    <input class="batch-qty-input" type="number" min="0" value="${b.quantity}" ${pending?'disabled':''}
+      onchange="updateBatchQty(${b.id}, this.value)">
+    ${type==='retail' && !pending ? `<button class="btn-danger-outline" onclick="openMarkReturn(${b.id})">回收</button>` : ''}
+  </div>`;
+}
+async function updateBatchQty(id, val){
+  const q = Number(val); if (isNaN(q) || q<0) return;
+  await sb.from('batches').update({ quantity:q, updated_at:new Date().toISOString() }).eq('id', id);
+  toast('已更新數量');
+}
+
+function renderOrderForm(type, locked){
+  if (!ITEMS.length) return `<div class="empty-msg">尚無品項</div>`;
+  return ITEMS.map(it=>`
+    <div class="order-row">
+      <div class="name">${it.name}</div>
+      <input type="number" min="0" data-item="${it.id}" data-type="${type}"
+        value="${ORDER_ITEMS[type][it.id] ?? ''}" placeholder="0" ${locked?'disabled':''}>
+    </div>`).join('');
+}
+async function submitOrder(type){
+  const cycle = CYCLES[type];
+  if (!cycle || Date.now() >= new Date(cycle.lock_at).getTime()){ toast('已鎖單，無法送出'); return; }
+  const inputs = document.querySelectorAll(`input[data-type="${type}"]`);
+  const rows = [];
+  inputs.forEach(inp=>{
+    const q = Number(inp.value||0);
+    rows.push({ cycle_id: cycle.id, item_id: Number(inp.dataset.item), quantity:q, updated_at:new Date().toISOString() });
+  });
+  const { error } = await sb.from('order_items').upsert(rows, { onConflict:'cycle_id,item_id' });
+  if (error){ toast('送出失敗：'+error.message); return; }
+  toast('已送出下單');
+  loadAll();
+}
+
+function renderAddonList(type){
+  const rows = ADDONS[type];
+  if (!rows.length) return `<div class="empty-msg">尚無追加申請</div>`;
+  const label = { pending:'審核中', approved:'已核准', rejected:'已拒絕' };
+  const cls = { pending:'status-pending', approved:'status-approved', rejected:'status-rejected' };
+  return rows.map(r=>`
+    <div class="addon-item">
+      <div>${itemName(r.item_id)} × ${r.quantity}<br><span style="color:var(--gray-50)">${r.reason||''}</span></div>
+      <span class="status-pill ${cls[r.status]}">${label[r.status]}</span>
+    </div>`).join('');
+}
+
+function renderReturnList(){
+  if (!RETURNS.length) return `<div class="empty-msg">尚無換貨／回收紀錄</div>`;
+  const label = { pending:'待工廠處理', decided:'已處理' };
+  const cls = { pending:'status-pending', decided:'status-decided' };
+  return RETURNS.map(r=>`
+    <div class="addon-item">
+      <div>${itemName(r.item_id)} × ${r.quantity}（烘焙 ${r.roast_date}）<br>
+        <span style="color:var(--gray-50)">${r.reason||''}${r.factory_decision ? '　→ '+r.factory_decision : ''}</span></div>
+      <span class="status-pill ${cls[r.status]}">${label[r.status]}</span>
+    </div>`).join('');
+}
+
+// ══════════ MODALS ══════════
+function openModal(html){
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('overlay').classList.add('show');
+}
+function closeModal(){ document.getElementById('overlay').classList.remove('show'); }
+document.getElementById('overlay').addEventListener('click', e=>{ if (e.target.id==='overlay') closeModal(); });
+
+function openAddBatch(type){
+  const opts = ITEMS.map(i=>`<option value="${i.id}">${i.name}</option>`).join('');
+  const today = dateStr(...Object.values(taipeiParts(Date.now())).slice(0,3));
+  openModal(`
+    <h3>新增批次（${TYPE_LABEL[type]}）</h3>
+    <div class="field"><label>品項</label><select id="mItem">${opts}</select></div>
+    <div class="field"><label>烘焙日期</label><input type="date" id="mRoast" value="${today}"></div>
+    <div class="field"><label>數量</label><input type="number" id="mQty" min="0" value="1"></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="saveAddBatch('${type}')">新增</button>
+    </div>`);
+}
+async function saveAddBatch(type){
+  const item_id = Number(document.getElementById('mItem').value);
+  const roast_date = document.getElementById('mRoast').value;
+  const quantity = Number(document.getElementById('mQty').value||0);
+  if (!roast_date || quantity<0){ toast('請填寫完整資料'); return; }
+  const { error } = await sb.from('batches').insert({ store_id:STORE_ID, item_id, channel:type, roast_date, quantity, status:'active', source:'manual' });
+  if (error){ toast('新增失敗：'+error.message); return; }
+  closeModal(); toast('已新增批次'); loadAll();
+}
+
+function openMarkReturn(batchId){
+  const b = BATCHES.find(x=>x.id===batchId);
+  if (!b) return;
+  openModal(`
+    <h3>標記回收／換貨</h3>
+    <div class="field"><label>品項</label><div>${itemName(b.item_id)}（烘焙 ${b.roast_date}）</div></div>
+    <div class="field"><label>數量</label><input type="number" id="rQty" min="0" value="${b.quantity}"></div>
+    <div class="field"><label>商品狀態</label><input type="text" id="rCond" placeholder="例：包裝完整／封口異常…"></div>
+    <div class="field"><label>回收原因</label><textarea id="rReason" placeholder="例：效期較久、需換貨…"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="saveMarkReturn(${b.id})">送出</button>
+    </div>`);
+}
+async function saveMarkReturn(batchId){
+  const b = BATCHES.find(x=>x.id===batchId);
+  const quantity = Number(document.getElementById('rQty').value||0);
+  const condition = document.getElementById('rCond').value.trim();
+  const reason = document.getElementById('rReason').value.trim();
+  const { error:e1 } = await sb.from('returns').insert({
+    batch_id:b.id, store_id:STORE_ID, item_id:b.item_id, quantity, roast_date:b.roast_date, condition, reason, status:'pending'
+  });
+  if (e1){ toast('送出失敗：'+e1.message); return; }
+  const { error:e2 } = await sb.from('batches').update({ status:'return_pending', updated_at:new Date().toISOString() }).eq('id', b.id);
+  if (e2){ toast('送出失敗：'+e2.message); return; }
+  closeModal(); toast('已送出回收登記'); loadAll();
+}
+
+function openAddon(type){
+  const opts = ITEMS.map(i=>`<option value="${i.id}">${i.name}</option>`).join('');
+  openModal(`
+    <h3>鎖單後追加申請（${TYPE_LABEL[type]}）</h3>
+    <div class="field"><label>品項</label><select id="aItem">${opts}</select></div>
+    <div class="field"><label>數量</label><input type="number" id="aQty" min="1" value="1"></div>
+    <div class="field"><label>申請原因</label><textarea id="aReason" placeholder="例：週末活動追加、臨時缺貨…"></textarea></div>
+    <div class="field"><label>申請人（店長）</label><input type="text" id="aBy" placeholder="姓名"></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="saveAddon('${type}')">送出申請</button>
+    </div>`);
+}
+async function saveAddon(type){
+  const item_id = Number(document.getElementById('aItem').value);
+  const quantity = Number(document.getElementById('aQty').value||0);
+  const reason = document.getElementById('aReason').value.trim();
+  const requested_by = document.getElementById('aBy').value.trim();
+  if (quantity<=0){ toast('請輸入數量'); return; }
+  const { error } = await sb.from('addon_requests').insert({ store_id:STORE_ID, type, item_id, quantity, reason, requested_by, status:'pending' });
+  if (error){ toast('送出失敗：'+error.message); return; }
+  closeModal(); toast('已送出追加申請'); loadAll();
+}
+
+// ══════════ 備份 + PWA ══════════
+function toggleBackupMenu(){
+  const el = document.getElementById('backupMenu');
+  el.style.display = el.style.display==='block' ? 'none' : 'block';
+}
+document.addEventListener('click', e=>{
+  const menu = document.getElementById('backupMenu');
+  if (!menu) return;
+  if (!e.target.closest('#backupMenu') && e.target.tagName!=='BUTTON'){ menu.style.display='none'; }
+});
+async function exportBackup(){
+  toggleBackupMenu();
+  const [{data:batches},{data:returns},{data:oi},{data:addons}] = await Promise.all([
+    sb.from('batches').select('*').eq('store_id', STORE_ID),
+    sb.from('returns').select('*').eq('store_id', STORE_ID),
+    sb.from('order_items').select('*, order_cycles!inner(store_id)').eq('order_cycles.store_id', STORE_ID),
+    sb.from('addon_requests').select('*').eq('store_id', STORE_ID)
+  ]);
+  const payload = { exported_at:new Date().toISOString(), source:'store.html:'+STORE_ID,
+    tables: { batches:batches||[], returns:returns||[], order_items:oi||[], addon_requests:addons||[] } };
+  const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `phase-coffee-ops_${STORE_ID}_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+}
+
+if ('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "PHASE 工廠端盤點下單管理",
+  "short_name": "工廠管理",
+  "start_url": "./factory.html",
+  "scope": "./factory.html",
+  "display": "standalone",
+  "background_color": "#fafafa",
+  "theme_color": "#3D2A1C",
+  "icons": [
+    { "src": "icons/factory-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/factory-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

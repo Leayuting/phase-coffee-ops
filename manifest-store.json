@@ -1,0 +1,13 @@
+{
+  "name": "PHASE 門店盤點下單",
+  "short_name": "門店下單",
+  "start_url": "./index.html",
+  "scope": "./index.html",
+  "display": "standalone",
+  "background_color": "#fafafa",
+  "theme_color": "#2C4A3E",
+  "icons": [
+    { "src": "icons/store-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/store-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
