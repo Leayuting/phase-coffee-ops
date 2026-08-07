@@ -63,6 +63,8 @@ tr.batch-row.pending{opacity:.6;}
 .status-pill{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;white-space:nowrap;}
 .status-pending{background:#fdf3d8;color:#8a6d1a;}
 .status-decided{background:var(--gray-10);color:var(--gray-70);}
+.status-approved{background:#e3f3ea;color:#2c6e4a;}
+.status-rejected{background:#fbe4e1;color:var(--danger);}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:flex-end;justify-content:center;z-index:200;}
 .overlay.show{display:flex;}
 .modal{background:#fff;border-radius:14px 14px 0 0;width:100%;max-width:640px;padding:18px;max-height:88vh;overflow:auto;}
@@ -122,11 +124,13 @@ tr.batch-row.pending{opacity:.6;}
     <button class="tab-btn active" data-tab="retail" onclick="switchTab('retail')">架上販售豆</button>
     <button class="tab-btn" data-tab="brew" onclick="switchTab('brew')">門市沖煮豆</button>
     <button class="tab-btn" data-tab="filter" onclick="switchTab('filter')">濾掛</button>
+    <button class="tab-btn" data-tab="otherstock" onclick="switchTab('otherstock')">其他店庫存</button>
   </div>
   <main>
     <section id="tab-retail" class="tab-panel active"></section>
     <section id="tab-brew" class="tab-panel"></section>
     <section id="tab-filter" class="tab-panel"></section>
+    <section id="tab-otherstock" class="tab-panel"></section>
   </main>
 </div>
 
@@ -172,7 +176,7 @@ function ageDaysOf(roastDateStr, nowMs){
 // ══════════ STATE ══════════
 let STORE_ID = null, STORE_NAME = '';
 let STORES = [], ITEMS = [];
-let BATCHES = [], RETURNS = [];
+let BATCHES = [], RETURNS = [], MY_TRANSFERS = [], OTHER_BATCHES = [];
 const TYPE_LABEL = { retail:'架上販售豆', brew:'門市沖煮豆', filter:'濾掛' };
 
 // ══════════ 登入（PIN，邏輯同門市採購系統） ══════════
@@ -330,12 +334,13 @@ function confirmCounterName(){
 async function loadAll(){
   setSyncStatus('loading');
   try{
-    const [{data:items}, {data:batches}, {data:returns}] = await Promise.all([
+    const [{data:items}, {data:batches}, {data:returns}, {data:transfers}] = await Promise.all([
       sb.from('items').select('*').eq('active', true).order('sort_order'),
       sb.from('batches').select('*').eq('store_id', STORE_ID).neq('status','disposed').order('roast_date'),
-      sb.from('returns').select('*').eq('store_id', STORE_ID).order('submitted_at', {ascending:false})
+      sb.from('returns').select('*').eq('store_id', STORE_ID).order('submitted_at', {ascending:false}),
+      sb.from('transfer_requests').select('*').eq('requesting_store_id', STORE_ID).order('requested_at', {ascending:false})
     ]);
-    ITEMS = items || []; BATCHES = batches || []; RETURNS = returns || [];
+    ITEMS = items || []; BATCHES = batches || []; RETURNS = returns || []; MY_TRANSFERS = transfers || [];
     setSyncStatus('ok');
   }catch(e){ console.error(e); setSyncStatus('local'); }
   render();
@@ -363,7 +368,7 @@ document.addEventListener('focusout', ()=>{
   setTimeout(()=>{ if (!isEditingInput()){ pendingReload = false; loadAll(); } }, 150);
 });
 function subscribeRealtime(){
-  const tables = ['items','batches','returns'];
+  const tables = ['items','batches','returns','transfer_requests'];
   const ch = sb.channel('store-realtime-'+STORE_ID);
   tables.forEach(t=>{
     ch.on('postgres_changes', { event:'*', schema:'public', table:t }, scheduleReload);
@@ -386,6 +391,7 @@ function switchTab(tab){
 function render(){
   ['retail','brew','filter'].forEach(renderTab);
   checkRecallNotifications();
+  renderOtherStockTab();
 }
 
 // ══════════ 工廠回收指示通知 ══════════
@@ -543,6 +549,102 @@ async function confirmCompleteReturn(returnId, batchId, backToList){
   }
   toast('已標記完成'); await loadAll();
   if (backToList && pendingReturns().length) openRecallModal(); else closeModal();
+}
+
+// ══════════ 其他店庫存查看 + 調貨申請 ══════════
+let otherStockShellBuilt = false;
+function storeNameOf(id){ const s = STORES.find(x=>x.id===id); return s ? s.name : id; }
+function renderOtherStockTab(){
+  const el = document.getElementById('tab-otherstock');
+  if (!otherStockShellBuilt){
+    const storeOpts = STORES.filter(s=>s.id!==STORE_ID).map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+    el.innerHTML = `
+      <div class="section">
+        <h2>查看其他門店庫存</h2>
+        <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">僅供查看，無法在此調整其他門店的庫存。</p>
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+          <select id="otherStoreSelect" onchange="loadOtherStock()"><option value="">請選擇門店</option>${storeOpts}</select>
+          <select id="otherChannelSelect" onchange="loadOtherStock()">
+            <option value="retail">架上販售豆</option>
+            <option value="brew">門市沖煮豆</option>
+            <option value="filter">濾掛</option>
+          </select>
+        </div>
+        <div id="otherStockList"><div class="empty-msg">請先選擇要查看的門店</div></div>
+      </div>
+      <div class="section">
+        <h2>我的調貨申請</h2>
+        <div id="transferRequestList"></div>
+      </div>`;
+    otherStockShellBuilt = true;
+  }
+  renderMyTransfers();
+}
+async function loadOtherStock(){
+  const storeId = document.getElementById('otherStoreSelect').value;
+  const channel = document.getElementById('otherChannelSelect').value;
+  if (!storeId){ OTHER_BATCHES = []; renderOtherStockList(); return; }
+  const { data } = await sb.from('batches').select('*').eq('store_id', storeId).eq('channel', channel).neq('status','disposed').order('roast_date');
+  OTHER_BATCHES = (data || []).map(b=>({ ...b, _channel:channel }));
+  renderOtherStockList();
+}
+function renderOtherStockList(){
+  const el = document.getElementById('otherStockList');
+  if (!OTHER_BATCHES.length){ el.innerHTML = `<div class="empty-msg">目前沒有庫存資料</div>`; return; }
+  const rows = [...OTHER_BATCHES].sort((a,b)=> itemName(a.item_id).localeCompare(itemName(b.item_id)) || a.roast_date.localeCompare(b.roast_date));
+  el.innerHTML = `<table>
+    <thead><tr><th>品項</th><th>日期</th><th>包數</th><th></th></tr></thead>
+    <tbody>${rows.map(b=>`
+      <tr>
+        <td data-label="品項">${itemName(b.item_id)}</td>
+        <td data-label="日期">${b.roast_date}</td>
+        <td data-label="包數">${b.quantity}</td>
+        <td data-label=""><button class="btn-sm" onclick="openTransferRequestModal(${b.id})">申請調貨</button></td>
+      </tr>`).join('')}</tbody>
+  </table>`;
+}
+function openTransferRequestModal(batchId){
+  ensureCounterName(()=>doOpenTransferRequestModal(batchId));
+}
+function doOpenTransferRequestModal(batchId){
+  const b = OTHER_BATCHES.find(x=>x.id===batchId);
+  if (!b) return;
+  openModal(`
+    <h3>申請調貨</h3>
+    <div class="field"><label>來源門店</label><div>${storeNameOf(b.store_id)}</div></div>
+    <div class="field"><label>品項</label><div>${itemName(b.item_id)}（烘焙 ${b.roast_date}，該店現有 ${b.quantity} 包）</div></div>
+    <div class="field"><label>需求包數</label><input type="number" id="trQty" min="1" value="1"></div>
+    <div class="field"><label>原因</label><textarea id="trReason" placeholder="例：本店缺貨、活動需求…"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="submitTransferRequest(${batchId})">送出申請</button>
+    </div>`);
+}
+async function submitTransferRequest(batchId){
+  const b = OTHER_BATCHES.find(x=>x.id===batchId);
+  if (!b) return;
+  const quantity = Number(document.getElementById('trQty').value||0);
+  const reason = document.getElementById('trReason').value.trim();
+  if (quantity<=0){ toast('請輸入數量'); return; }
+  const { error } = await sb.from('transfer_requests').insert({
+    requesting_store_id:STORE_ID, source_store_id:b.store_id, item_id:b.item_id, channel:b._channel,
+    quantity, reason, requested_by:counterName, status:'pending'
+  });
+  if (error){ toast('送出失敗：'+error.message); return; }
+  closeModal(); toast('已送出調貨申請'); loadAll();
+}
+function renderMyTransfers(){
+  const el = document.getElementById('transferRequestList');
+  if (!el) return;
+  if (!MY_TRANSFERS.length){ el.innerHTML = `<div class="empty-msg">尚無調貨申請</div>`; return; }
+  const label = { pending:'待審核', approved:'已核准', rejected:'已拒絕' };
+  const cls = { pending:'status-pending', approved:'status-approved', rejected:'status-rejected' };
+  el.innerHTML = MY_TRANSFERS.map(t=>`
+    <div class="addon-item">
+      <div>向 ${storeNameOf(t.source_store_id)} 申請 ${itemName(t.item_id)} × ${t.quantity}（${TYPE_LABEL[t.channel]}）<br>
+        <span style="color:var(--gray-50)">${t.reason||''}${t.decision_note ? '　回覆：'+t.decision_note : ''}</span></div>
+      <span class="status-pill ${cls[t.status]}">${label[t.status]}</span>
+    </div>`).join('');
 }
 
 // ══════════ MODALS ══════════

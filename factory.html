@@ -64,6 +64,8 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
 .status-pill{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;white-space:nowrap;}
 .status-pending{background:var(--yellow-bg);color:#8a6d1a;}
 .status-decided{background:var(--gray-10);color:var(--gray-70);}
+.status-approved{background:#e3f3ea;color:#2c6e4a;}
+.status-rejected{background:var(--red-bg);color:var(--danger);}
 .addon-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--gray-08);flex-wrap:wrap;}
 .addon-row:first-child{border-top:none;}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:200;padding:16px;}
@@ -128,6 +130,7 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
   <button class="tab-btn" data-tab="alert" onclick="switchTab('alert')">販售豆總覽</button>
   <button class="tab-btn" data-tab="brewboard" onclick="switchTab('brewboard')">沖煮豆總覽</button>
   <button class="tab-btn" data-tab="filterboard" onclick="switchTab('filterboard')">濾掛總覽</button>
+  <button class="tab-btn" data-tab="transfers" onclick="switchTab('transfers')">調貨申請</button>
   <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">系統設定</button>
 </div>
 <main>
@@ -135,6 +138,7 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
   <section id="tab-alert" class="tab-panel"></section>
   <section id="tab-brewboard" class="tab-panel"></section>
   <section id="tab-filterboard" class="tab-panel"></section>
+  <section id="tab-transfers" class="tab-panel"></section>
   <section id="tab-settings" class="tab-panel"></section>
 </main>
 </div>
@@ -183,7 +187,7 @@ function todayStr(){ const p = taipeiParts(Date.now()); return dateStr(p.y,p.m,p
 
 // ══════════ STATE ══════════
 let STORES = [], ITEMS_ALL = [], ITEMS = [];
-let BATCHES = [], RETURNS = [];
+let BATCHES = [], RETURNS = [], TRANSFERS = [];
 
 const DECISIONS = ['調回','變成出杯豆','報廢','其他'];
 
@@ -254,14 +258,15 @@ if (localStorage.getItem(SESSION_KEY) === '1'){ enterApp(); } else { showLogin()
 async function loadAll(){
   setSyncStatus('loading');
   try{
-    const [{data:stores},{data:itemsAll},{data:batches},{data:returns}] = await Promise.all([
+    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers}] = await Promise.all([
       sb.from('stores').select('*').order('sort_order'),
       sb.from('items').select('*').order('sort_order'),
       sb.from('batches').select('*').neq('status','disposed').order('roast_date'),
-      sb.from('returns').select('*').order('submitted_at',{ascending:false})
+      sb.from('returns').select('*').order('submitted_at',{ascending:false}),
+      sb.from('transfer_requests').select('*').order('requested_at',{ascending:false})
     ]);
     STORES = stores || []; ITEMS_ALL = itemsAll || []; ITEMS = ITEMS_ALL.filter(i=>i.active);
-    BATCHES = batches || []; RETURNS = returns || [];
+    BATCHES = batches || []; RETURNS = returns || []; TRANSFERS = transfers || [];
     setSyncStatus('ok');
   }catch(e){ console.error(e); setSyncStatus('local'); }
   render();
@@ -286,7 +291,7 @@ document.addEventListener('focusout', ()=>{
   setTimeout(()=>{ if (!isEditingInput()){ pendingReload = false; loadAll(); } }, 150);
 });
 function subscribeRealtime(){
-  const tables = ['stores','items','batches','returns'];
+  const tables = ['stores','items','batches','returns','transfer_requests'];
   const ch = sb.channel('factory-realtime');
   tables.forEach(t=>ch.on('postgres_changes',{event:'*',schema:'public',table:t}, scheduleReload));
   ch.subscribe(s=>{
@@ -307,6 +312,7 @@ function render(){
   renderAlertTab();
   renderSimpleBoardTab('brew', 'brewboard', '跨店沖煮豆庫存看板');
   renderSimpleBoardTab('filter', 'filterboard', '跨店濾掛庫存看板');
+  renderTransfersTab();
   renderSettingsTab();
 }
 function itemName(id){ const it = ITEMS_ALL.find(i=>i.id===id); return it ? it.name : '（已刪除品項）'; }
@@ -604,6 +610,48 @@ async function initiateRecall(batchId){
   toast('已通知門店'); loadAll();
 }
 
+// ══════════ 調貨申請審核 ══════════
+function renderTransfersTab(){
+  const el = document.getElementById('tab-transfers');
+  const pending = TRANSFERS.filter(t=>t.status==='pending');
+  const decided = TRANSFERS.filter(t=>t.status!=='pending');
+  const label = { approved:'已核准', rejected:'已拒絕' };
+  el.innerHTML = `
+    <div class="section">
+      <h2>待審核（${pending.length}）</h2>
+      ${pending.length ? pending.map(t=>`
+        <div class="addon-row">
+          <div>
+            <b>${storeName(t.requesting_store_id)}</b> 向 <b>${storeName(t.source_store_id)}</b> 申請調貨｜
+            ${CHANNEL_LABEL[t.channel]}｜${itemName(t.item_id)} × ${t.quantity}<br>
+            <span style="color:var(--gray-50)">${t.reason||''}${t.requested_by ? '　申請人：'+t.requested_by : ''}</span>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <input type="text" id="transferNote-${t.id}" placeholder="備註" style="width:110px">
+            <button class="btn-sm" onclick="decideTransfer(${t.id}, 'approved')">核准</button>
+            <button class="btn-danger" onclick="decideTransfer(${t.id}, 'rejected')">拒絕</button>
+          </div>
+        </div>`).join('') : `<div class="empty-msg">目前沒有待審核的調貨申請</div>`}
+    </div>
+    <div class="section">
+      <h2>審核紀錄</h2>
+      ${decided.length ? decided.map(t=>`
+        <div class="addon-row">
+          <div>
+            <b>${storeName(t.requesting_store_id)}</b> 向 <b>${storeName(t.source_store_id)}</b> 申請調貨｜
+            ${CHANNEL_LABEL[t.channel]}｜${itemName(t.item_id)} × ${t.quantity}<br>
+            <span style="color:var(--gray-50)">${t.decision_note||''}</span>
+          </div>
+          <span class="status-pill ${t.status==='approved'?'status-approved':'status-rejected'}">${label[t.status]}</span>
+        </div>`).join('') : `<div class="empty-msg">尚無紀錄</div>`}
+    </div>`;
+}
+async function decideTransfer(id, status){
+  const note = document.getElementById('transferNote-'+id)?.value.trim() || '';
+  await sb.from('transfer_requests').update({ status, decision_note:note, decided_at:new Date().toISOString() }).eq('id', id);
+  toast(status==='approved' ? '已核准' : '已拒絕'); loadAll();
+}
+
 // ══════════ 系統設定：重設登入 PIN ══════════
 function renderSettingsTab(){
   const el = document.getElementById('tab-settings');
@@ -661,7 +709,7 @@ document.addEventListener('click', e=>{
   if (!menu) return;
   if (!e.target.closest('#backupMenu') && e.target.tagName!=='BUTTON'){ menu.style.display='none'; }
 });
-const BACKUP_TABLES = ['stores','items','batches','returns','store_pins','factory_auth'];
+const BACKUP_TABLES = ['stores','items','batches','returns','store_pins','factory_auth','transfer_requests'];
 const BACKUP_CONFLICT_KEY = { store_pins:'store_id' };
 async function exportBackup(){
   toggleBackupMenu();
