@@ -158,6 +158,11 @@ const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const { createClient } = supabase;
 const sb = createClient(SB_URL, SB_KEY);
 
+// 咖啡豆資料庫是另一個獨立的 Supabase 專案，只用來單向讀取品項名稱做同步，不寫入
+const BEANS_SB_URL = "https://knkpxeynkecfsmonmzvi.supabase.co";
+const BEANS_SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtua3B4ZXlua2VjZnNtb25tenZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyODUwNDEsImV4cCI6MjA5NDg2MTA0MX0.NUsXfRAEEG2RSeP_uwDGrvWdsuFj--WC6z10u55wiW0";
+const beansSb = createClient(BEANS_SB_URL, BEANS_SB_KEY);
+
 function setSyncStatus(state){
   const el = document.getElementById('syncStatus');
   const map = { ok:['● 即時同步','#7bc99e'], local:['○ 離線','#e8a040'], loading:['⟳ 連線中','#999'] };
@@ -258,6 +263,7 @@ async function init(){
   await loadAll();
   subscribeRealtime();
   setInterval(()=>{ if (!isEditingInput()) render(); }, 30000);
+  syncItemsFromBeansDB();
 }
 
 if (localStorage.getItem(SESSION_KEY) === '1'){ enterApp(); } else { showLogin(); }
@@ -314,6 +320,26 @@ function switchTab(tab){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active', p.id==='tab-'+tab));
   localStorage.setItem(LAST_TAB_KEY, tab);
+  if (tab==='items') syncItemsFromBeansDB();
+}
+let itemsSyncing = false;
+async function syncItemsFromBeansDB(){
+  if (itemsSyncing) return;
+  itemsSyncing = true;
+  try{
+    const { data, error } = await beansSb.from('beans').select('name_zh').is('deleted_at', null).is('delisted_at', null);
+    if (error || !data) return;
+    const existingNames = new Set(ITEMS_ALL.map(i=>i.name));
+    const newNames = [...new Set(data.map(b=>b.name_zh).filter(Boolean))].filter(n=>!existingNames.has(n));
+    if (!newNames.length) return;
+    const maxSort = Math.max(0, ...ITEMS_ALL.map(i=>i.sort_order));
+    const rows = newNames.map((name, idx) => ({ name, active:true, sort_order: maxSort+1+idx }));
+    const { error:e2 } = await sb.from('items').insert(rows);
+    if (e2){ console.error(e2); return; }
+    toast(`已從咖啡豆資料庫同步 ${newNames.length} 個新品項`);
+    loadAll();
+  }catch(e){ console.error(e); }
+  finally{ itemsSyncing = false; }
 }
 
 function render(){
