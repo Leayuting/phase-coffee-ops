@@ -25,6 +25,10 @@ header{background:var(--black);color:var(--white);padding:16px 18px;display:flex
 header .store-name{font-size:18px;font-weight:600;letter-spacing:.02em;}
 header .sync{margin-left:auto;font-size:11px;color:var(--gray-50);white-space:nowrap;}
 .recall-banner{background:var(--danger);color:#fff;font-size:13.5px;font-weight:600;padding:10px 16px;text-align:center;cursor:pointer;}
+.marquee-bar{background:#3D2A1C;color:#fff;overflow:hidden;white-space:nowrap;padding:7px 0;font-size:12.5px;cursor:pointer;}
+.marquee-content{display:inline-block;padding-left:100%;animation:marquee-scroll 22s linear infinite;}
+.marquee-bar:hover .marquee-content{animation-play-state:paused;}
+@keyframes marquee-scroll{ 0%{transform:translateX(0);} 100%{transform:translateX(-100%);} }
 .counter-bar{background:var(--gray-10);color:var(--gray-70);font-size:12.5px;padding:7px 16px;text-align:center;cursor:pointer;}
 .counter-bar b{color:var(--black);}
 .tabs{display:flex;background:#fff;border-bottom:1px solid var(--gray-20);position:sticky;top:56px;z-index:49;}
@@ -110,6 +114,7 @@ tr.batch-row.pending{opacity:.6;}
 </div>
 
 <div id="appRoot" style="display:none">
+  <div id="announcementMarquee" class="marquee-bar" style="display:none;" onclick="switchTab('announcements')"><div class="marquee-content" id="marqueeContent"></div></div>
   <header>
     <div class="store-name" id="storeName">—</div>
     <div class="sync" id="syncStatus">連線中</div>
@@ -402,6 +407,15 @@ function render(){
   renderOtherStockTab();
   checkAnnouncementNotifications();
   renderAnnouncementsTab();
+  renderAnnouncementMarquee();
+}
+function renderAnnouncementMarquee(){
+  const bar = document.getElementById('announcementMarquee');
+  const content = document.getElementById('marqueeContent');
+  const recent = MY_RECEIPTS.slice(0, 5);
+  if (!recent.length){ bar.style.display = 'none'; return; }
+  content.textContent = recent.map(r => `📢 ${r.announcement.title ? r.announcement.title+'：' : ''}${r.announcement.content}`).join('　　｜　　');
+  bar.style.display = 'block';
 }
 
 // ══════════ 工廠回收指示通知 ══════════
