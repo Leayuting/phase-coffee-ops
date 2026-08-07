@@ -560,21 +560,23 @@ function storeNameOf(id){ const s = STORES.find(x=>x.id===id); return s ? s.name
 function renderOtherStockTab(){
   const el = document.getElementById('tab-otherstock');
   if (!otherStockShellBuilt){
-    const storeOpts = STORES.filter(s=>s.id!==STORE_ID).map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+    const others = STORES.filter(s=>s.id!==STORE_ID);
+    const storeOpts = others.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
     el.innerHTML = `
       <div class="section">
         <h2>查看其他門店庫存</h2>
-        <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">僅供查看，無法在此調整其他門店的庫存。選擇門店後會整合顯示該店所有頻道的庫存。</p>
+        <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">僅供查看，無法在此調整其他門店的庫存。切換門店會整合顯示該店所有頻道的庫存。</p>
         <div style="margin-bottom:10px;">
-          <select id="otherStoreSelect" onchange="loadOtherStock()"><option value="">請選擇門店</option>${storeOpts}</select>
+          <select id="otherStoreSelect" onchange="loadOtherStock()">${storeOpts}</select>
         </div>
-        <div id="otherStockList"><div class="empty-msg">請先選擇要查看的門店</div></div>
+        <div id="otherStockList"><div class="empty-msg">載入中…</div></div>
       </div>
       <div class="section">
         <h2>我的調貨申請</h2>
         <div id="transferRequestList"></div>
       </div>`;
     otherStockShellBuilt = true;
+    if (others.length) loadOtherStock();
   }
   renderMyTransfers();
 }
