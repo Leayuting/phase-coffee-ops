@@ -1,6 +1,6 @@
 {
-  "name": "PHASE 門店盤點下單",
-  "short_name": "門店下單",
+  "name": "PHASE 門店盤點系統",
+  "short_name": "門店盤點",
   "start_url": "./index.html",
   "scope": "./index.html",
   "display": "standalone",
