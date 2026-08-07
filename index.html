@@ -171,6 +171,13 @@ function toast(msg){
   clearTimeout(window._toastTimer);
   window._toastTimer = setTimeout(()=>t.classList.remove('show'), 2200);
 }
+// 防止同一個送出動作被連續點擊/重複觸發造成重複資料
+const _submitting = new Set();
+async function guardSubmit(key, fn){
+  if (_submitting.has(key)) return;
+  _submitting.add(key);
+  try{ await fn(); } finally { _submitting.delete(key); }
+}
 
 // ══════════ TAIPEI TIME（僅用於批次天數顯示，UTC+8 固定，台灣無日光節省時間） ══════════
 function taipeiShifted(nowMs){ return new Date(nowMs + 8*3600*1000); }
@@ -255,14 +262,15 @@ async function pressPinKey(k){
 }
 async function submitPin(){
   pinChecking = true;
-  const { data } = await sb.from('store_pins').select('pin_hash').eq('store_id', pinTargetStore).maybeSingle();
   const hash = await sha256Hex(pinBuffer);
+  const { data: ok } = await sb.rpc('verify_store_pin', { p_store_id: pinTargetStore, p_pin_hash: hash });
   pinChecking = false;
-  if (data && data.pin_hash === hash){
+  if (ok){
     localStorage.setItem(SESSION_KEY, JSON.stringify({ store: pinTargetStore }));
     enterStore(pinTargetStore);
   } else {
-    document.getElementById('pinError').textContent = data ? '密碼錯誤' : '此門店尚未設定 PIN，請聯絡管理者';
+    const { data: hasPin } = await sb.rpc('store_has_pin', { p_store_id: pinTargetStore });
+    document.getElementById('pinError').textContent = hasPin ? '密碼錯誤' : '此門店尚未設定 PIN，請聯絡管理者';
     setTimeout(()=>{ pinBuffer=''; renderPinDots(); document.getElementById('pinError').textContent=' '; }, 600);
   }
 }
@@ -597,6 +605,8 @@ function updateBatchQty(id, val){
 async function doUpdateBatchQty(id, val){
   const q = Number(val); if (isNaN(q) || q<0) return;
   const now = new Date().toISOString();
+  const before = BATCHES.find(b=>b.id===id);
+  const oldQty = before ? before.quantity : null;
   if (q === 0){
     if (!confirm('數量歸零，這筆批次會標記為已用罄並從庫存列表移除，確定嗎？')){ render(); return; }
     await sb.from('batches').update({ quantity:0, status:'disposed', disposal_action:'已用罄', updated_at:now, last_counted_by:counterName, last_counted_at:now }).eq('id', id);
@@ -604,6 +614,9 @@ async function doUpdateBatchQty(id, val){
   } else {
     await sb.from('batches').update({ quantity:q, updated_at:now, last_counted_by:counterName, last_counted_at:now }).eq('id', id);
     toast(`已更新數量（盤點人：${counterName}）`);
+  }
+  if (oldQty !== q){
+    await sb.from('batch_history').insert({ batch_id:id, old_quantity:oldQty, new_quantity:q, changed_by:counterName });
   }
   loadAll();
 }
@@ -620,7 +633,7 @@ function doOpenAddBatchModal(type){
   openModal(`
     <h3>新增庫存（${TYPE_LABEL[type]}）</h3>
     <div class="field"><label>品項</label><select id="nbItem">${opts}</select></div>
-    ${needsRoast ? `<div class="field"><label>烘焙日期</label><input type="date" id="nbRoast" value="${todayStr()}"></div>` : ''}
+    ${needsRoast ? `<div class="field"><label>烘焙日期</label><input type="date" id="nbRoast" value="${todayStr()}" max="${todayStr()}"></div>` : ''}
     <div class="field"><label>包數</label><input type="number" id="nbQty" min="0" value="1"></div>
     <div class="modal-actions">
       <button class="btn-outline" onclick="closeModal()">取消</button>
@@ -633,10 +646,13 @@ async function saveAddBatch(type){
   const roast_date = roastInput ? roastInput.value : todayStr();
   const quantity = Number(document.getElementById('nbQty').value||0);
   if (!roast_date || quantity<0){ toast('請填寫完整資料'); return; }
-  const now = new Date().toISOString();
-  const { error } = await sb.from('batches').insert({ store_id:STORE_ID, item_id, channel:type, roast_date, quantity, status:'active', source:'manual', last_counted_by:counterName, last_counted_at:now });
-  if (error){ toast('新增失敗：'+error.message); return; }
-  closeModal(); toast('已新增庫存'); loadAll();
+  if (roast_date > todayStr()){ toast('烘焙日期不能晚於今天'); return; }
+  await guardSubmit('saveAddBatch', async ()=>{
+    const now = new Date().toISOString();
+    const { error } = await sb.from('batches').insert({ store_id:STORE_ID, item_id, channel:type, roast_date, quantity, status:'active', source:'manual', last_counted_by:counterName, last_counted_at:now });
+    if (error){ toast('新增失敗：'+error.message); return; }
+    closeModal(); toast('已新增庫存'); loadAll();
+  });
 }
 
 function renderReturnList(){
@@ -700,11 +716,12 @@ function renderOtherStockTab(){
       </div>
       <div class="section">
         <h2>我的調貨申請</h2>
+        <p style="color:var(--gray-50);font-size:12px;margin-bottom:8px;">核准後系統不會自動調整雙方庫存數量，請雙方門店自行盤點調整。</p>
         <div id="transferRequestList"></div>
       </div>`;
     otherStockShellBuilt = true;
-    if (others.length) loadOtherStock();
   }
+  if (STORES.filter(s=>s.id!==STORE_ID).length) loadOtherStock();
   renderOwnStockSummary();
   renderMyTransfers();
 }
@@ -774,12 +791,14 @@ async function submitTransferRequest(batchId){
   const reason = document.getElementById('trReason').value.trim();
   if (quantity<=0){ toast('請輸入數量'); return; }
   if (quantity>b.quantity){ toast(`數量不能超過該店現有的 ${b.quantity} 包`); return; }
-  const { error } = await sb.from('transfer_requests').insert({
-    requesting_store_id:STORE_ID, source_store_id:b.store_id, item_id:b.item_id, channel:b.channel,
-    quantity, reason, requested_by:counterName, status:'pending'
+  await guardSubmit('submitTransferRequest', async ()=>{
+    const { error } = await sb.from('transfer_requests').insert({
+      requesting_store_id:STORE_ID, source_store_id:b.store_id, item_id:b.item_id, channel:b.channel,
+      quantity, reason, requested_by:counterName, status:'pending'
+    });
+    if (error){ toast('送出失敗：'+error.message); return; }
+    closeModal(); toast('已送出調貨申請'); loadAll();
   });
-  if (error){ toast('送出失敗：'+error.message); return; }
-  closeModal(); toast('已送出調貨申請'); loadAll();
 }
 function renderMyTransfers(){
   const el = document.getElementById('transferRequestList');

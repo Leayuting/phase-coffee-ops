@@ -181,6 +181,13 @@ function toast(msg){
   clearTimeout(window._toastTimer);
   window._toastTimer = setTimeout(()=>{ t.style.opacity = 0; }, 2200);
 }
+// 防止同一個送出動作被連續點擊/重複觸發造成重複資料
+const _submitting = new Set();
+async function guardSubmit(key, fn){
+  if (_submitting.has(key)) return;
+  _submitting.add(key);
+  try{ await fn(); } finally { _submitting.delete(key); }
+}
 
 // ══════════ TAIPEI TIME HELPERS ══════════
 function taipeiShifted(nowMs){ return new Date(nowMs + 8*3600*1000); }
@@ -241,10 +248,10 @@ async function pressPinKey(k){
 }
 async function submitPin(){
   pinChecking = true;
-  const { data } = await sb.from('factory_auth').select('pin_hash').eq('id','factory').maybeSingle();
   const hash = await sha256Hex(pinBuffer);
+  const { data: ok } = await sb.rpc('verify_factory_pin', { p_pin_hash: hash });
   pinChecking = false;
-  if (data && data.pin_hash === hash){
+  if (ok){
     localStorage.setItem(SESSION_KEY, '1');
     enterApp();
   } else {
@@ -460,9 +467,11 @@ async function addItem(){
   const input = document.getElementById('newItemName');
   const name = input.value.trim();
   if (!name) return;
-  const maxSort = Math.max(0, ...ITEMS_ALL.map(i=>i.sort_order));
-  await sb.from('items').insert({ name, active:true, sort_order:maxSort+1 });
-  input.value=''; toast('已新增品項'); loadAll();
+  await guardSubmit('addItem', async ()=>{
+    const maxSort = Math.max(0, ...ITEMS_ALL.map(i=>i.sort_order));
+    await sb.from('items').insert({ name, active:true, sort_order:maxSort+1 });
+    input.value=''; toast('已新增品項'); loadAll();
+  });
 }
 async function renameItem(id, name){
   name = name.trim(); if (!name) return;
@@ -492,6 +501,7 @@ function onItemDragStart(e, row){
   row.classList.add('dragging');
   document.addEventListener('pointermove', onItemDragMove);
   document.addEventListener('pointerup', onItemDragEnd);
+  document.addEventListener('pointercancel', onItemDragEnd);
 }
 function onItemDragMove(e){
   if (!itemDragRow) return;
@@ -507,6 +517,7 @@ function onItemDragMove(e){
 async function onItemDragEnd(){
   document.removeEventListener('pointermove', onItemDragMove);
   document.removeEventListener('pointerup', onItemDragEnd);
+  document.removeEventListener('pointercancel', onItemDragEnd);
   if (!itemDragRow) return;
   itemDragRow.classList.remove('dragging');
   const row = itemDragRow;
@@ -602,7 +613,7 @@ function openAddBatchModal(channel){
     <h3>新增批次（${CHANNEL_LABEL[channel]}）</h3>
     <div class="field"><label>門店</label><select id="nbStore">${storeOpts}</select></div>
     <div class="field"><label>品項</label><select id="nbItem">${itemOpts}</select></div>
-    ${needsRoast ? `<div class="field"><label>烘焙日期</label><input type="date" id="nbRoast" value="${todayStr()}"></div>` : ''}
+    ${needsRoast ? `<div class="field"><label>烘焙日期</label><input type="date" id="nbRoast" value="${todayStr()}" max="${todayStr()}"></div>` : ''}
     <div class="field"><label>數量</label><input type="number" id="nbQty" min="0" value="1"></div>
     <div class="modal-actions">
       <button class="btn-outline" onclick="closeModal()">取消</button>
@@ -616,9 +627,12 @@ async function saveAddBatch(channel){
   const roast_date = roastInput ? roastInput.value : todayStr();
   const quantity = Number(document.getElementById('nbQty').value||0);
   if (!roast_date || quantity<0){ toast('請填寫完整資料'); return; }
-  const { error } = await sb.from('batches').insert({ store_id, item_id, channel, roast_date, quantity, status:'active', source:'manual' });
-  if (error){ toast('新增失敗：'+error.message); return; }
-  closeModal(); toast('已新增批次'); loadAll();
+  if (roast_date > todayStr()){ toast('烘焙日期不能晚於今天'); return; }
+  await guardSubmit('saveAddBatch', async ()=>{
+    const { error } = await sb.from('batches').insert({ store_id, item_id, channel, roast_date, quantity, status:'active', source:'manual' });
+    if (error){ toast('新增失敗：'+error.message); return; }
+    closeModal(); toast('已新增批次'); loadAll();
+  });
 }
 function renderReturnHistory(){
   if (!RETURNS.length) return `<div class="empty-msg">目前沒有回收紀錄</div>`;
@@ -726,20 +740,8 @@ async function initiateRecall(batchId){
   if (!allocations.length || total !== b.quantity){
     toast(`分配總數需等於批次總量 ${b.quantity}（目前 ${total}）`); return;
   }
-  for (const a of allocations){
-    const { data:newBatch, error:e1 } = await sb.from('batches').insert({
-      store_id:b.store_id, item_id:b.item_id, channel:b.channel, roast_date:b.roast_date,
-      quantity:a.qty, status:'return_pending', disposal_action:a.decision, disposal_note:a.note, source:b.source
-    }).select().single();
-    if (e1){ toast('通知失敗：'+e1.message); return; }
-    const { error:e2 } = await sb.from('returns').insert({
-      batch_id:newBatch.id, store_id:b.store_id, item_id:b.item_id, quantity:a.qty, roast_date:b.roast_date,
-      factory_decision:a.decision, decision_note:a.note, status:'pending'
-    });
-    if (e2){ toast('通知失敗：'+e2.message); return; }
-  }
-  const { error:e3 } = await sb.from('batches').delete().eq('id', batchId);
-  if (e3){ toast('通知失敗（分批已建立，但原批次未清除）：'+e3.message); return; }
+  const { error } = await sb.rpc('initiate_recall', { p_batch_id: batchId, p_allocations: allocations });
+  if (error){ toast('通知失敗：'+error.message); return; }
   toast('已通知門店'); loadAll();
 }
 
@@ -752,6 +754,7 @@ function renderTransfersTab(){
   el.innerHTML = `
     <div class="section">
       <h2>待審核（${pending.length}）</h2>
+      <p style="color:var(--warn);font-size:12px;margin-bottom:10px;">⚠ 核准僅代表同意調貨，系統不會自動調整雙方庫存數量，請提醒雙方門店核准後自行盤點調整。</p>
       ${pending.length ? pending.map(t=>`
         <div class="addon-row">
           <div>
@@ -835,12 +838,14 @@ async function publishAnnouncement(){
   const targetStores = Array.from(document.querySelectorAll('.ann-store-check:checked')).map(el=>el.value);
   if (!content){ toast('請輸入公告內容'); return; }
   if (!targetStores.length){ toast('請至少選擇一間門店'); return; }
-  const { data, error } = await sb.from('announcements').insert({ title:title||null, content }).select().single();
-  if (error){ toast('發布失敗：'+error.message); return; }
-  const receiptRows = targetStores.map(storeId => ({ announcement_id:data.id, store_id:storeId }));
-  const { error:e2 } = await sb.from('announcement_receipts').insert(receiptRows);
-  if (e2){ toast('發布失敗：'+e2.message); return; }
-  toast('已發布公告'); loadAll();
+  await guardSubmit('publishAnnouncement', async ()=>{
+    const { data, error } = await sb.from('announcements').insert({ title:title||null, content }).select().single();
+    if (error){ toast('發布失敗：'+error.message); return; }
+    const receiptRows = targetStores.map(storeId => ({ announcement_id:data.id, store_id:storeId }));
+    const { error:e2 } = await sb.from('announcement_receipts').insert(receiptRows);
+    if (e2){ toast('發布失敗：'+e2.message); return; }
+    toast('已發布公告'); loadAll();
+  });
 }
 async function deleteAnnouncement(id){
   if (!confirm('確定要刪除這則公告嗎？門店端也會一併移除，此動作無法復原。')) return;
@@ -1051,8 +1056,9 @@ async function resetStorePin(storeId){
   const input = document.getElementById('newpin-'+storeId);
   const pin = input.value.trim();
   if (!/^\d{8}$/.test(pin)){ toast('PIN 需為 8 位數字'); return; }
+  if (!confirm(`確定要重設「${storeName(storeId)}」的登入 PIN 嗎？重設後該店原本的 PIN 會立即失效。`)) return;
   const pin_hash = await sha256Hex(pin);
-  const { error } = await sb.from('store_pins').upsert({ store_id:storeId, pin_hash, updated_at:new Date().toISOString() }, { onConflict:'store_id' });
+  const { error } = await sb.rpc('reset_store_pin', { p_store_id: storeId, p_new_hash: pin_hash });
   if (error){ toast('重設失敗：'+error.message); return; }
   input.value=''; toast('已重設 PIN');
 }
@@ -1060,8 +1066,9 @@ async function resetFactoryPin(){
   const input = document.getElementById('newpin-factory');
   const pin = input.value.trim();
   if (!/^\d{8}$/.test(pin)){ toast('PIN 需為 8 位數字'); return; }
+  if (!confirm('確定要重設工廠端的登入 PIN 嗎？重設後原本的 PIN 會立即失效。')) return;
   const pin_hash = await sha256Hex(pin);
-  const { error } = await sb.from('factory_auth').upsert({ id:'factory', pin_hash, updated_at:new Date().toISOString() }, { onConflict:'id' });
+  const { error } = await sb.rpc('reset_factory_pin', { p_new_hash: pin_hash });
   if (error){ toast('重設失敗：'+error.message); return; }
   input.value=''; toast('已重設工廠端 PIN，下次登入請用新密碼');
 }
@@ -1076,8 +1083,8 @@ document.addEventListener('click', e=>{
   if (!menu) return;
   if (!e.target.closest('#backupMenu') && e.target.tagName!=='BUTTON'){ menu.style.display='none'; }
 });
-const BACKUP_TABLES = ['stores','items','batches','returns','store_pins','factory_auth','transfer_requests','announcements','announcement_receipts'];
-const BACKUP_CONFLICT_KEY = { store_pins:'store_id' };
+// store_pins/factory_auth（登入密碼雜湊）刻意不納入備份範圍，避免明碼備份檔外流等同洩漏所有登入密碼
+const BACKUP_TABLES = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','batch_history'];
 async function exportBackup(){
   toggleBackupMenu();
   const tables = {};
@@ -1103,7 +1110,7 @@ async function handleRestoreFile(ev){
     for (const t of BACKUP_TABLES){
       const rows = tables[t];
       if (!rows || !rows.length) continue;
-      const { error } = await sb.from(t).upsert(rows, { onConflict: BACKUP_CONFLICT_KEY[t] || 'id' });
+      const { error } = await sb.from(t).upsert(rows, { onConflict: 'id' });
       if (error) throw new Error(t+': '+error.message);
     }
     toast('匯入還原完成'); loadAll();
