@@ -267,6 +267,8 @@ function enterStore(storeId){
   document.getElementById('pickerRoot').style.display = 'none';
   document.getElementById('storeName').textContent = STORE_NAME;
   document.getElementById('appRoot').style.display = 'block';
+  const lastTab = localStorage.getItem(LAST_TAB_KEY);
+  if (lastTab && document.getElementById('tab-'+lastTab)) switchTab(lastTab);
   loadCounterName();
   loadAll();
   subscribeRealtime();
@@ -373,9 +375,11 @@ function subscribeRealtime(){
 }
 
 // ══════════ TABS ══════════
+const LAST_TAB_KEY = 'phase_coffee_store_lasttab';
 function switchTab(tab){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active', p.id==='tab-'+tab));
+  localStorage.setItem(LAST_TAB_KEY, tab);
 }
 
 // ══════════ RENDER ══════════
