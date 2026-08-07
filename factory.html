@@ -88,6 +88,8 @@ input[type=text],input[type=number],input[type=date],select,textarea{padding:6px
   header .title{font-size:15px;}
   main{padding:12px;}
   .section{padding:13px;}
+  .date-age{display:flex;flex-direction:column;align-items:flex-end;gap:2px;}
+  .tabs{-webkit-mask-image:linear-gradient(to right,#000 92%,transparent 100%);mask-image:linear-gradient(to right,#000 92%,transparent 100%);}
 }
 .picker{padding:60px 18px;text-align:center;max-width:340px;margin:0 auto;}
 .picker h1{font-size:18px;margin-bottom:24px;}
@@ -760,7 +762,7 @@ async function decideTransfer(id, status){
 function renderAnnouncementsTab(){
   const el = document.getElementById('tab-announcements');
   const storeChecks = STORES.map(s=>`
-    <label style="display:inline-flex;align-items:center;gap:5px;margin-right:14px;font-size:13px;font-weight:400;">
+    <label style="display:inline-flex;flex-shrink:0;align-items:center;gap:5px;margin-right:14px;margin-bottom:8px;font-size:13px;font-weight:400;white-space:nowrap;">
       <input type="checkbox" class="ann-store-check" value="${s.id}" checked> ${s.name}
     </label>`).join('');
   el.innerHTML = `
@@ -768,7 +770,7 @@ function renderAnnouncementsTab(){
       <h2>發布公告</h2>
       <div class="field"><label>標題（選填）</label><input type="text" id="annTitle" placeholder="公告標題"></div>
       <div class="field"><label>內容</label><textarea id="annContent" placeholder="公告內容…" style="min-height:90px;"></textarea></div>
-      <div class="field"><label>發送對象</label><div>${storeChecks}</div></div>
+      <div class="field"><label>發送對象</label><div style="display:flex;flex-wrap:wrap;">${storeChecks}</div></div>
       <button class="btn" onclick="publishAnnouncement()">發布公告</button>
     </div>
     <div class="section">

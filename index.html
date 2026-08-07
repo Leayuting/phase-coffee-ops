@@ -64,6 +64,8 @@ tr.batch-row.pending{opacity:.6;}
   td{display:flex;justify-content:space-between;align-items:center;border:none;padding:4px 0;}
   td::before{content:attr(data-label);color:var(--gray-50);font-size:11.5px;}
   tr{border-bottom:1px solid var(--gray-10);padding:6px 0;}
+  .date-age{display:flex;flex-direction:column;align-items:flex-end;gap:2px;}
+  .tabs{-webkit-mask-image:linear-gradient(to right,#000 92%,transparent 100%);mask-image:linear-gradient(to right,#000 92%,transparent 100%);}
 }
 .empty-msg{color:var(--gray-50);font-size:13px;padding:8px 2px;}
 .addon-item{border-top:1px solid var(--gray-08);padding:8px 0;font-size:13px;display:flex;justify-content:space-between;gap:8px;}
@@ -583,7 +585,7 @@ function renderBatchRow(b, type){
   if (type==='retail'){ if (age>=21) ageCls='age-red'; else if (age>=14) ageCls='age-yellow'; }
   return `<tr class="batch-row ${ageCls} ${pending?'pending':''}">
     <td data-label="品項">${itemName(b.item_id)}</td>
-    <td data-label="日期" class="batch-info">${b.roast_date} <span class="roast">（${age}天）</span>${pending?'<span class="badge">待回收完成</span>':''}</td>
+    <td data-label="日期" class="batch-info"><span class="date-age">${b.roast_date} <span class="roast">（${age}天）</span>${pending?'<span class="badge">待回收完成</span>':''}</span></td>
     <td data-label="包數"><input class="batch-qty-input" type="number" min="0" value="${b.quantity}" ${pending?'disabled':''}
       onchange="updateBatchQty(${b.id}, this.value)"></td>
   </tr>`;
@@ -722,7 +724,7 @@ function groupedStockHtml(batchList, allowTransferRequest){
           if (ch==='retail'){ if (age>=21) ageCls='batch-row age-red'; else if (age>=14) ageCls='batch-row age-yellow'; }
           return `<tr class="${ageCls}">
             <td data-label="品項">${itemName(b.item_id)}</td>
-            <td data-label="日期">${b.roast_date}（${age}天）</td>
+            <td data-label="日期"><span class="date-age">${b.roast_date}（${age}天）</span></td>
             <td data-label="包數">${b.quantity}</td>
             <td data-label="">${allowTransferRequest ? `<button class="btn-sm" onclick="openTransferRequestModal(${b.id})">申請調貨</button>` : ''}</td>
           </tr>`;
