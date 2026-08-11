@@ -563,11 +563,10 @@ function renderTab(type){
       ${type==='retail' ? `<div class="legend"><span><i style="background:#e8c43a"></i>烘焙14–20天</span><span><i style="background:#c0453a"></i>烘焙21天以上</span></div>` : ''}
       <div id="${type}-batchList">${renderBatchList(type)}</div>
     </div>
-    ${type==='retail' ? `
     <div class="section">
       <h2>工廠回收指示</h2>
-      <div id="retail-returnList">${renderReturnList()}</div>
-    </div>` : ''}
+      <div id="${type}-returnList">${renderReturnList(type)}</div>
+    </div>
   `;
 }
 
@@ -655,11 +654,12 @@ async function saveAddBatch(type){
   });
 }
 
-function renderReturnList(){
-  if (!RETURNS.length) return `<div class="empty-msg">目前沒有工廠回收指示</div>`;
+function renderReturnList(channel){
+  const rows = channel ? RETURNS.filter(r=>r.channel===channel) : RETURNS;
+  if (!rows.length) return `<div class="empty-msg">目前沒有工廠回收指示</div>`;
   const label = { pending:'待門店完成', decided:'已完成' };
   const cls = { pending:'status-pending', decided:'status-decided' };
-  return RETURNS.map(r=>`
+  return rows.map(r=>`
     <div class="addon-item">
       <div>${itemName(r.item_id)} × ${r.quantity}（烘焙 ${r.roast_date}）<br>
         <span style="color:var(--gray-50)">工廠處置：${r.factory_decision||'—'}${r.decision_note ? '（'+r.decision_note+'）' : ''}${r.completed_by ? '　由 '+r.completed_by+' 完成' : ''}</span></div>

@@ -392,6 +392,19 @@ const CAT_META = {
   O: { zh:'其他',         color:'#4a7c6f', light:'#e8f2f0', text:'#fff' },
 };
 const CAT_ORDER = ['G','Y','P','R','B','T','X','O'];
+function groupItemIdsByCategory(itemIds){
+  const groups = {};
+  itemIds.forEach(id=>{
+    const it = ITEMS_ALL.find(i=>i.id===id);
+    const c = (it && it.category_code) || '';
+    (groups[c] ||= []).push(id);
+  });
+  const codes = [...CAT_ORDER, ''].filter(c=>groups[c] && groups[c].length);
+  return codes.map(c=>({
+    meta: c ? CAT_META[c] : { zh:'未分類', color:'var(--gray-30)', text:'#fff' },
+    itemIds: groups[c]
+  }));
+}
 let itemViewMode = 'category';
 function itemCategoryOptions(selected){
   return `<option value="" ${!selected?'selected':''}>未分類</option>` +
@@ -536,63 +549,58 @@ async function onItemDragEnd(){
 
 // ══════════ 販售豆總覽（效期看板） ══════════
 function renderAlertTab(){
-  const el = document.getElementById('tab-alert');
-  const retailBatches = BATCHES.filter(b=>b.channel==='retail');
-  const byItem = {};
-  retailBatches.forEach(b=>{ (byItem[b.item_id] ||= []).push(b); });
-  const order = ITEMS.map(i=>i.id).filter(id=>byItem[id]);
-
-  el.innerHTML = `
-    <div class="section">
-      <h2>跨店批次效期看板<button class="btn-sm" onclick="openAddBatchModal('retail')">＋ 新增批次</button></h2>
-      <div class="legend">
-        <span><i style="background:var(--yellow-bd)"></i>烘焙14–20天</span>
-        <span><i style="background:var(--red-bd)"></i>烘焙21天以上</span>
-        <span><i style="background:var(--warn)"></i>已通知門店，待完成</span>
-      </div>
-      ${order.length ? order.map(itemId=>`
-        <div class="item-block">
-          <div class="item-block-title">${itemName(itemId)}</div>
-          <div class="grid3">
-            ${STORES.map(st=>{
-              const list = byItem[itemId].filter(b=>b.store_id===st.id).sort((a,b)=>a.roast_date.localeCompare(b.roast_date));
-              return `<div class="store-col">
-                <div class="store-label">${st.name}</div>
-                ${list.length ? list.map(b=>renderAlertBatchLine(b)).join('') : `<div class="empty-msg" style="padding:2px;">無庫存</div>`}
-              </div>`;
-            }).join('')}
-          </div>
-        </div>`).join('') : `<div class="empty-msg">目前沒有販售豆批次資料</div>`}
-    </div>
-    <div class="section">
-      <h2>回收歷史紀錄</h2>
-      ${renderReturnHistory()}
-    </div>`;
+  renderBoardTab('retail', 'alert', '跨店批次效期看板', true);
 }
-
 function renderSimpleBoardTab(channel, tabId, title){
+  renderBoardTab(channel, tabId, title, false);
+}
+function renderBoardTab(channel, tabId, title, isRetail){
   const el = document.getElementById('tab-'+tabId);
   const chBatches = BATCHES.filter(b=>b.channel===channel);
   const byItem = {};
   chBatches.forEach(b=>{ (byItem[b.item_id] ||= []).push(b); });
   const order = ITEMS.map(i=>i.id).filter(id=>byItem[id]);
+  const groups = groupItemIdsByCategory(order);
+
+  const legendHtml = isRetail
+    ? `<div class="legend">
+        <span><i style="background:var(--yellow-bd)"></i>烘焙14–20天</span>
+        <span><i style="background:var(--red-bd)"></i>烘焙21天以上</span>
+        <span><i style="background:var(--warn)"></i>已通知門店，待完成</span>
+      </div>`
+    : `<div class="legend"><span><i style="background:var(--warn)"></i>已通知門店，待完成</span></div>`;
+
+  const boardHtml = groups.length ? groups.map(g=>`
+    <details open style="margin-bottom:10px;border:1px solid var(--gray-08);border-radius:6px;overflow:hidden;">
+      <summary style="background:${g.meta.color};color:${g.meta.text};padding:9px 12px;font-weight:700;cursor:pointer;list-style:none;">
+        ${g.meta.zh}（${g.itemIds.length}）
+      </summary>
+      <div style="padding:10px 12px;">
+        ${g.itemIds.map(itemId=>`
+          <div class="item-block">
+            <div class="item-block-title">${itemName(itemId)}</div>
+            <div class="grid3">
+              ${STORES.map(st=>{
+                const list = byItem[itemId].filter(b=>b.store_id===st.id).sort((a,b)=>a.roast_date.localeCompare(b.roast_date));
+                return `<div class="store-col">
+                  <div class="store-label">${st.name}</div>
+                  ${list.length ? list.map(b=>renderBoardBatchLine(b, channel)).join('') : `<div class="empty-msg" style="padding:2px;">無庫存</div>`}
+                </div>`;
+              }).join('')}
+            </div>
+          </div>`).join('')}
+      </div>
+    </details>`).join('') : `<div class="empty-msg">目前沒有批次資料</div>`;
 
   el.innerHTML = `
     <div class="section">
       <h2>${title}<button class="btn-sm" onclick="openAddBatchModal('${channel}')">＋ 新增批次</button></h2>
-      ${order.length ? order.map(itemId=>`
-        <div class="item-block">
-          <div class="item-block-title">${itemName(itemId)}</div>
-          <div class="grid3">
-            ${STORES.map(st=>{
-              const list = byItem[itemId].filter(b=>b.store_id===st.id).sort((a,b)=>a.roast_date.localeCompare(b.roast_date));
-              return `<div class="store-col">
-                <div class="store-label">${st.name}</div>
-                ${list.length ? list.map(b=>`<div class="batch-line">${b.roast_date}（${ageDaysOf(b.roast_date, Date.now())}天）× ${b.quantity}${countedInfoHtml(b)}</div>`).join('') : `<div class="empty-msg" style="padding:2px;">無庫存</div>`}
-              </div>`;
-            }).join('')}
-          </div>
-        </div>`).join('') : `<div class="empty-msg">目前沒有批次資料</div>`}
+      ${legendHtml}
+      ${boardHtml}
+    </div>
+    <div class="section">
+      <h2>回收歷史紀錄</h2>
+      ${renderReturnHistory(channel)}
     </div>`;
 }
 
@@ -634,9 +642,10 @@ async function saveAddBatch(channel){
     closeModal(); toast('已新增批次'); loadAll();
   });
 }
-function renderReturnHistory(){
-  if (!RETURNS.length) return `<div class="empty-msg">目前沒有回收紀錄</div>`;
-  const sorted = [...RETURNS].sort((a,b)=>new Date(b.submitted_at)-new Date(a.submitted_at));
+function renderReturnHistory(channel){
+  const rows = channel ? RETURNS.filter(r=>r.channel===channel) : RETURNS;
+  if (!rows.length) return `<div class="empty-msg">目前沒有回收紀錄</div>`;
+  const sorted = [...rows].sort((a,b)=>new Date(b.submitted_at)-new Date(a.submitted_at));
   return `<table>
     <thead><tr><th>門店</th><th>品項</th><th>數量</th><th>烘焙日期</th><th>工廠處置</th><th>狀態</th><th>完成人</th><th>發起時間</th></tr></thead>
     <tbody>
@@ -658,10 +667,10 @@ function countedInfoHtml(b){
   if (!b.last_counted_by) return '';
   return `<div style="color:var(--gray-50);font-size:11px;margin-top:2px;">盤點：${b.last_counted_by}・${fmtDT(new Date(b.last_counted_at).getTime())}</div>`;
 }
-function renderAlertBatchLine(b){
+function renderBoardBatchLine(b, channel){
   const age = ageDaysOf(b.roast_date, Date.now());
   let cls = '';
-  if (age>=21) cls='age-red'; else if (age>=14) cls='age-yellow';
+  if (channel==='retail'){ if (age>=21) cls='age-red'; else if (age>=14) cls='age-yellow'; }
   if (b.status==='return_pending'){
     cls += ' pending';
     return `<div class="batch-line ${cls}">
