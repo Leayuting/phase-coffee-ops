@@ -200,10 +200,29 @@ let STORES = [], ITEMS = [];
 let BATCHES = [], RETURNS = [], MY_TRANSFERS = [], OTHER_BATCHES = [], MY_RECEIPTS = [];
 const TYPE_LABEL = { retail:'架上販售豆', brew:'門市沖煮豆', filter:'濾掛' };
 const CAT_META = {
-  G: { zh:'蜜處理・日曬' }, Y: { zh:'水洗' }, P: { zh:'自然發酵' }, R: { zh:'特殊發酵' },
-  B: { zh:'堅果奶油' }, T: { zh:'台灣競標' }, X: { zh:'配方豆' }, O: { zh:'其他' },
+  G: { zh:'蜜處理・日曬', color:'#b0b0b0', text:'var(--black)' },
+  Y: { zh:'水洗',         color:'#e8c43a', text:'var(--black)' },
+  P: { zh:'自然發酵',     color:'#d47a7a', text:'#fff' },
+  R: { zh:'特殊發酵',     color:'#8a1a1a', text:'#fff' },
+  B: { zh:'堅果奶油',     color:'#5a2e0e', text:'#fff' },
+  T: { zh:'台灣競標',     color:'#009ba8', text:'#fff' },
+  X: { zh:'配方豆',       color:'#555555', text:'#fff' },
+  O: { zh:'其他',         color:'#4a7c6f', text:'#fff' },
 };
 const CAT_ORDER = ['G','Y','P','R','B','T','X','O'];
+function groupBatchesByCategory(rows, type){
+  const groups = {};
+  rows.forEach(b=>{
+    const it = ITEMS.find(i=>i.id===b.item_id);
+    const c = (it && it.category_code) || '';
+    (groups[c] ||= []).push(b);
+  });
+  const codes = [...CAT_ORDER, ''].filter(c=>groups[c] && groups[c].length);
+  return codes.map(c=>({
+    meta: c ? CAT_META[c] : { zh:'未分類', color:'var(--gray-30)', text:'#fff' },
+    rows: groups[c].sort((a,b)=> agePriority(b,type)-agePriority(a,type) || itemName(a.item_id).localeCompare(itemName(b.item_id)) || a.roast_date.localeCompare(b.roast_date))
+  }));
+}
 function itemSelectOptionsGrouped(items){
   const groups = {};
   items.forEach(it=>{ const c = it.category_code || ''; (groups[c] ||= []).push(it); });
@@ -578,13 +597,19 @@ function agePriority(b, type){
   return 0;
 }
 function renderBatchList(type){
-  const rows = BATCHES.filter(b=>b.channel===type)
-    .sort((a,b)=> agePriority(b,type)-agePriority(a,type) || itemName(a.item_id).localeCompare(itemName(b.item_id)) || a.roast_date.localeCompare(b.roast_date));
+  const rows = BATCHES.filter(b=>b.channel===type);
   if (!rows.length) return `<div class="empty-msg">目前沒有登記中的批次</div>`;
-  return `<table>
-    <thead><tr><th>品項</th><th>日期</th><th>包數</th></tr></thead>
-    <tbody>${rows.map(b=>renderBatchRow(b,type)).join('')}</tbody>
-  </table>`;
+  const groups = groupBatchesByCategory(rows, type);
+  return groups.map(g=>`
+    <details open style="margin-bottom:8px;border:1px solid var(--gray-08);border-radius:6px;overflow:hidden;">
+      <summary style="background:${g.meta.color};color:${g.meta.text};padding:9px 12px;font-weight:700;cursor:pointer;list-style:none;">
+        ${g.meta.zh}（${g.rows.length}）
+      </summary>
+      <table>
+        <thead><tr><th>品項</th><th>日期</th><th>包數</th></tr></thead>
+        <tbody>${g.rows.map(b=>renderBatchRow(b,type)).join('')}</tbody>
+      </table>
+    </details>`).join('');
 }
 function renderBatchRow(b, type){
   const age = ageDaysOf(b.roast_date, Date.now());
