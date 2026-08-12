@@ -146,6 +146,7 @@ tr.batch-row.pending{opacity:.6;}
     <section id="tab-otherstock" class="tab-panel"></section>
     <section id="tab-announcements" class="tab-panel"></section>
   </main>
+  <div id="lastCountedFooter" class="counter-bar" style="cursor:default;"></div>
 </div>
 
 <div class="overlay" id="overlay"><div class="modal" id="modalBody"></div></div>
@@ -453,6 +454,15 @@ function render(){
   checkAnnouncementNotifications();
   renderAnnouncementsTab();
   renderAnnouncementMarquee();
+  renderLastCountedFooter();
+}
+function renderLastCountedFooter(){
+  const el = document.getElementById('lastCountedFooter');
+  if (!el) return;
+  const counted = BATCHES.filter(b=>b.last_counted_at).sort((a,b)=>new Date(b.last_counted_at)-new Date(a.last_counted_at));
+  if (!counted.length){ el.textContent = '尚無盤點紀錄'; return; }
+  const latest = counted[0];
+  el.innerHTML = `最後盤點：<b>${latest.last_counted_by||'—'}</b>・${fmtDTShort(latest.last_counted_at)}`;
 }
 function renderAnnouncementMarquee(){
   const bar = document.getElementById('announcementMarquee');
