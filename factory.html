@@ -646,8 +646,14 @@ function renderReturnHistory(channel){
   const rows = channel ? RETURNS.filter(r=>r.channel===channel) : RETURNS;
   if (!rows.length) return `<div class="empty-msg">目前沒有回收紀錄</div>`;
   const sorted = [...rows].sort((a,b)=>new Date(b.submitted_at)-new Date(a.submitted_at));
+  const statusPill = {
+    pending: '<span class="status-pill status-pending">待門店完成</span>',
+    decided: '<span class="status-pill status-decided">已完成</span>',
+    rejected: '<span class="status-pill status-rejected">門店已拒絕</span>',
+    cancelled: '<span class="status-pill status-decided">工廠已取消</span>',
+  };
   return `<table>
-    <thead><tr><th>門店</th><th>品項</th><th>數量</th><th>烘焙日期</th><th>工廠處置</th><th>狀態</th><th>完成人</th><th>發起時間</th></tr></thead>
+    <thead><tr><th>門店</th><th>品項</th><th>數量</th><th>烘焙日期</th><th>工廠處置</th><th>狀態</th><th>處理人</th><th>發起時間</th></tr></thead>
     <tbody>
       ${sorted.map(r=>`
         <tr>
@@ -656,8 +662,8 @@ function renderReturnHistory(channel){
           <td data-label="數量">${r.quantity}</td>
           <td data-label="烘焙日期">${r.roast_date}</td>
           <td data-label="工廠處置">${r.factory_decision||'—'}${r.decision_note?'（'+r.decision_note+'）':''}</td>
-          <td data-label="狀態">${r.status==='pending' ? '<span class="status-pill status-pending">待門店完成</span>' : '<span class="status-pill status-decided">已完成</span>'}</td>
-          <td data-label="完成人">${r.completed_by||'—'}</td>
+          <td data-label="狀態">${statusPill[r.status]||r.status}${r.reject_reason?`<div style="color:var(--gray-50);font-size:11px;margin-top:2px;">拒絕原因：${r.reject_reason}</div>`:''}</td>
+          <td data-label="處理人">${r.completed_by||'—'}</td>
           <td data-label="發起時間">${fmtDT(new Date(r.submitted_at).getTime())}</td>
         </tr>`).join('')}
     </tbody>
@@ -677,6 +683,7 @@ function renderBoardBatchLine(b, channel){
       ${b.roast_date}（${age}天）× ${b.quantity}
       <div style="margin-top:4px;color:var(--gray-70);font-size:12px;">已通知門店：${b.disposal_action||''}${b.disposal_note?'（'+b.disposal_note+'）':''}，待門店完成</div>
       ${countedInfoHtml(b)}
+      <button class="btn-outline" style="margin-top:4px;" onclick="cancelReturn(${b.id})">取消回收</button>
     </div>`;
   }
   return `<div class="batch-line ${cls}">
@@ -689,7 +696,10 @@ function renderBoardBatchLine(b, channel){
         <button class="btn-outline" onclick="addAllocRow(${b.id})">＋ 分拆一筆</button>
         <span class="alloc-total" id="alloc-total-${b.id}"></span>
       </div>
-      <button class="btn-sm" style="margin-top:6px;" onclick="initiateRecall(${b.id})">通知門店</button>
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <button class="btn-sm" onclick="initiateRecall(${b.id})">通知門店</button>
+        <button class="btn-outline" onclick="cancelDraftRecall(${b.id})">取消</button>
+      </div>
     </div>
   </div>`;
 }
@@ -704,6 +714,20 @@ function allocRowHtml(batchId, decision, qty, note){
 function toggleRecallForm(batchId){
   const el = document.getElementById('recall-form-'+batchId);
   if (el){ el.style.display = el.style.display==='none' ? 'block' : 'none'; updateAllocTotal(batchId); }
+}
+function cancelDraftRecall(batchId){
+  const b = BATCHES.find(x=>x.id===batchId);
+  const container = document.getElementById('alloc-rows-'+batchId);
+  if (container) container.innerHTML = allocRowHtml(batchId, DECISIONS[0], b?.quantity||0, '');
+  toggleRecallForm(batchId);
+}
+async function cancelReturn(batchId){
+  const r = RETURNS.find(x=>x.batch_id===batchId && x.status==='pending');
+  if (!r){ toast('找不到對應的回收紀錄'); return; }
+  if (!confirm('確定要取消這筆回收嗎？該批次會恢復為正常庫存。')) return;
+  const { error } = await sb.rpc('cancel_return', { p_return_id: r.id });
+  if (error){ toast('取消失敗：'+error.message); return; }
+  toast('已取消回收'); loadAll();
 }
 function addAllocRow(batchId){
   const b = BATCHES.find(x=>x.id===batchId);

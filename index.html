@@ -490,7 +490,10 @@ function openRecallModal(){
       <div class="addon-item" id="recall-item-${r.id}">
         <div>${itemName(r.item_id)} × ${r.quantity}（烘焙 ${r.roast_date}）<br>
           <span style="color:var(--gray-50)">工廠處置：${r.factory_decision||'—'}${r.decision_note ? '（'+r.decision_note+'）' : ''}</span></div>
-        <button class="btn-sm" onclick="promptCompleteReturn(${r.id}, ${r.batch_id}, true)">標記完成</button>
+        <div style="display:flex;gap:6px;">
+          <button class="btn-sm" onclick="promptCompleteReturn(${r.id}, ${r.batch_id}, true)">標記完成</button>
+          <button class="btn-outline" onclick="promptRejectReturn(${r.id}, true)">拒絕</button>
+        </div>
       </div>`).join('')}</div>
     <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">稍後再處理</button></div>`);
 }
@@ -682,14 +685,15 @@ async function saveAddBatch(type){
 function renderReturnList(channel){
   const rows = channel ? RETURNS.filter(r=>r.channel===channel) : RETURNS;
   if (!rows.length) return `<div class="empty-msg">目前沒有工廠回收指示</div>`;
-  const label = { pending:'待門店完成', decided:'已完成' };
-  const cls = { pending:'status-pending', decided:'status-decided' };
+  const label = { pending:'待門店完成', decided:'已完成', rejected:'已拒絕', cancelled:'工廠已取消' };
+  const cls = { pending:'status-pending', decided:'status-decided', rejected:'status-rejected', cancelled:'status-decided' };
   return rows.map(r=>`
     <div class="addon-item">
       <div>${itemName(r.item_id)} × ${r.quantity}（烘焙 ${r.roast_date}）<br>
-        <span style="color:var(--gray-50)">工廠處置：${r.factory_decision||'—'}${r.decision_note ? '（'+r.decision_note+'）' : ''}${r.completed_by ? '　由 '+r.completed_by+' 完成' : ''}</span></div>
+        <span style="color:var(--gray-50)">工廠處置：${r.factory_decision||'—'}${r.decision_note ? '（'+r.decision_note+'）' : ''}${r.completed_by ? '　由 '+r.completed_by+(r.status==='rejected'?' 拒絕':' 完成') : ''}</span>
+        ${r.reject_reason ? `<br><span style="color:var(--danger)">拒絕原因：${r.reject_reason}</span>` : ''}</div>
       ${r.status==='pending'
-        ? `<button class="btn-sm" onclick="promptCompleteReturn(${r.id}, ${r.batch_id}, false)">標記完成</button>`
+        ? `<div style="display:flex;gap:6px;"><button class="btn-sm" onclick="promptCompleteReturn(${r.id}, ${r.batch_id}, false)">標記完成</button><button class="btn-outline" onclick="promptRejectReturn(${r.id}, false)">拒絕</button></div>`
         : `<span class="status-pill ${cls[r.status]}">${label[r.status]}</span>`}
     </div>`).join('');
 }
@@ -708,13 +712,32 @@ function promptCompleteReturn(returnId, batchId, backToList){
 async function confirmCompleteReturn(returnId, batchId, backToList){
   const name = document.getElementById('completeByName').value.trim();
   if (!name){ toast('請輸入姓名'); return; }
-  const { error:e1 } = await sb.from('returns').update({ status:'decided', decided_at:new Date().toISOString(), completed_by:name }).eq('id', returnId);
-  if (e1){ toast('更新失敗：'+e1.message); return; }
-  if (batchId){
-    const { error:e2 } = await sb.from('batches').update({ status:'disposed', updated_at:new Date().toISOString() }).eq('id', batchId);
-    if (e2){ toast('更新失敗：'+e2.message); return; }
-  }
+  const { error } = await sb.rpc('complete_return', { p_return_id:returnId, p_batch_id:batchId, p_name:name });
+  if (error){ toast('更新失敗：'+error.message); return; }
   toast('已標記完成'); await loadAll();
+  if (backToList && pendingReturns().length) openRecallModal(); else closeModal();
+}
+function promptRejectReturn(returnId, backToList){
+  const r = RETURNS.find(x=>x.id===returnId);
+  if (!r) return;
+  openModal(`
+    <h3>拒絕回收</h3>
+    <div class="field"><label>項目</label><div>${itemName(r.item_id)} × ${r.quantity}（烘焙 ${r.roast_date}）</div></div>
+    <div class="field"><label>拒絕原因</label><textarea id="rejectReason" placeholder="請說明拒絕原因…"></textarea></div>
+    <div class="field"><label>經手人姓名（以示負責）</label><input type="text" id="rejectByName" placeholder="請輸入姓名"></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="${backToList ? 'openRecallModal()' : 'closeModal()'}">取消</button>
+      <button class="btn" onclick="confirmRejectReturn(${returnId}, ${backToList})">確認拒絕</button>
+    </div>`);
+}
+async function confirmRejectReturn(returnId, backToList){
+  const reason = document.getElementById('rejectReason').value.trim();
+  const name = document.getElementById('rejectByName').value.trim();
+  if (!reason){ toast('請輸入拒絕原因'); return; }
+  if (!name){ toast('請輸入姓名'); return; }
+  const { error } = await sb.rpc('reject_return', { p_return_id:returnId, p_reason:reason, p_name:name });
+  if (error){ toast('操作失敗：'+error.message); return; }
+  toast('已拒絕回收，批次恢復為正常庫存'); await loadAll();
   if (backToList && pendingReturns().length) openRecallModal(); else closeModal();
 }
 
