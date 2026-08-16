@@ -298,7 +298,7 @@ async function loadAll(){
       sb.from('announcements').select('*').order('created_at',{ascending:false}),
       sb.from('announcement_receipts').select('*'),
       sb.from('counting_sessions').select('*').order('signed_at',{ascending:false}).limit(200),
-      sb.from('batches').select('channel,last_counted_by,last_counted_at').not('last_counted_at','is',null).order('last_counted_at',{ascending:false}).limit(300)
+      sb.from('batches').select('store_id,channel,last_counted_by,last_counted_at').not('last_counted_at','is',null).order('last_counted_at',{ascending:false}).limit(300)
     ]);
     STORES = stores || []; ITEMS_ALL = itemsAll || []; ITEMS = ITEMS_ALL.filter(i=>i.active);
     BATCHES = batches || []; RETURNS = returns || []; TRANSFERS = transfers || [];
@@ -558,18 +558,21 @@ async function onItemDragEnd(){
 }
 
 function renderLatestCountBar(channel){
-  const latest = COUNT_LOGS.find(r => r.channel === channel);
-  if (!latest){
-    return `<div style="background:var(--warn);color:#fff;padding:10px 14px;border-radius:8px;font-weight:600;margin-bottom:12px;">尚無盤點紀錄</div>`;
-  }
-  const cp = taipeiParts(new Date(latest.last_counted_at).getTime());
-  const isToday = dateStr(cp.y, cp.m, cp.d) === todayStr();
-  const dtLabel = fmtDTFull(new Date(latest.last_counted_at).getTime());
-  const bg = isToday ? 'var(--ok)' : 'var(--danger)';
-  const text = isToday
-    ? `最新盤點：${latest.last_counted_by}｜${dtLabel}`
-    : `今日尚未盤點｜上次盤點：${latest.last_counted_by}｜${dtLabel}`;
-  return `<div style="background:${bg};color:#fff;padding:10px 14px;border-radius:8px;font-weight:600;margin-bottom:12px;">${text}</div>`;
+  const cards = STORES.map(st=>{
+    const latest = COUNT_LOGS.find(r => r.channel===channel && r.store_id===st.id);
+    if (!latest){
+      return `<div style="background:var(--warn);color:#fff;padding:8px 12px;border-radius:8px;font-weight:600;font-size:12.5px;">${st.name}：尚無盤點紀錄</div>`;
+    }
+    const cp = taipeiParts(new Date(latest.last_counted_at).getTime());
+    const isToday = dateStr(cp.y, cp.m, cp.d) === todayStr();
+    const dtLabel = fmtDTFull(new Date(latest.last_counted_at).getTime());
+    const bg = isToday ? 'var(--ok)' : 'var(--danger)';
+    const text = isToday
+      ? `${st.name}：最新盤點 ${latest.last_counted_by}｜${dtLabel}`
+      : `${st.name}：今日尚未盤點｜上次 ${latest.last_counted_by}｜${dtLabel}`;
+    return `<div style="background:${bg};color:#fff;padding:8px 12px;border-radius:8px;font-weight:600;font-size:12.5px;">${text}</div>`;
+  });
+  return `<div class="grid3" style="margin-bottom:12px;">${cards.join('')}</div>`;
 }
 // ══════════ 販售豆總覽（效期看板） ══════════
 function renderAlertTab(){
