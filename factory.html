@@ -211,6 +211,7 @@ function todayStr(){ const p = taipeiParts(Date.now()); return dateStr(p.y,p.m,p
 let STORES = [], ITEMS_ALL = [], ITEMS = [];
 let BATCHES = [], RETURNS = [], TRANSFERS = [];
 let ANNOUNCEMENTS = [], RECEIPTS = [];
+let SIGNATURES = [];
 
 const DECISIONS = ['調回','變成出杯豆','報廢','其他'];
 
@@ -283,18 +284,20 @@ if (localStorage.getItem(SESSION_KEY) === '1'){ enterApp(); } else { showLogin()
 async function loadAll(){
   setSyncStatus('loading');
   try{
-    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts}] = await Promise.all([
+    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts},{data:signatures}] = await Promise.all([
       sb.from('stores').select('*').order('sort_order'),
       sb.from('items').select('*').order('sort_order'),
       sb.from('batches').select('*').neq('status','disposed').order('roast_date'),
       sb.from('returns').select('*').order('submitted_at',{ascending:false}),
       sb.from('transfer_requests').select('*').order('requested_at',{ascending:false}),
       sb.from('announcements').select('*').order('created_at',{ascending:false}),
-      sb.from('announcement_receipts').select('*')
+      sb.from('announcement_receipts').select('*'),
+      sb.from('counting_sessions').select('*').order('signed_at',{ascending:false}).limit(200)
     ]);
     STORES = stores || []; ITEMS_ALL = itemsAll || []; ITEMS = ITEMS_ALL.filter(i=>i.active);
     BATCHES = batches || []; RETURNS = returns || []; TRANSFERS = transfers || [];
     ANNOUNCEMENTS = announcements || []; RECEIPTS = receipts || [];
+    SIGNATURES = signatures || [];
     setSyncStatus('ok');
   }catch(e){ console.error(e); setSyncStatus('local'); }
   render();
@@ -319,7 +322,7 @@ document.addEventListener('focusout', ()=>{
   setTimeout(()=>{ if (!isEditingInput()){ pendingReload = false; loadAll(); } }, 150);
 });
 function subscribeRealtime(){
-  const tables = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts'];
+  const tables = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','counting_sessions'];
   const ch = sb.channel('factory-realtime');
   tables.forEach(t=>ch.on('postgres_changes',{event:'*',schema:'public',table:t}, scheduleReload));
   ch.subscribe(s=>{
@@ -910,6 +913,10 @@ function renderReportsTab(){
       <div class="section">
         <h2>各店月度調貨往來</h2>
         <div id="transferReportContent"></div>
+      </div>
+      <div class="section">
+        <h2>盤點簽名紀錄</h2>
+        <div id="signatureReportContent"></div>
       </div>`;
     reportsShellBuilt = true;
   }
@@ -918,6 +925,7 @@ function renderReportsTab(){
 function renderReportsContent(){
   const month = document.getElementById('reportMonthSelect').value;
   if (!month) return;
+  renderSignatureReport(month);
   renderLossReport(month);
   renderTransferReport(month);
 }
@@ -1013,6 +1021,21 @@ function renderTransferReport(month){
     </div>`;
   }
   el.innerHTML = tableFor(byRequester, '各店發起調貨申請') + tableFor(bySource, '各店被申請調貨（來源店）');
+}
+function renderSignatureReport(month){
+  const el = document.getElementById('signatureReportContent');
+  const rows = SIGNATURES.filter(s => taipeiMonthOf(s.signed_at) === month);
+  if (!rows.length){ el.innerHTML = `<div class="empty-msg">該月份沒有盤點簽名紀錄</div>`; return; }
+  el.innerHTML = `<table>
+    <thead><tr><th>門店</th><th>盤點人</th><th>簽名時間</th><th>簽名</th></tr></thead>
+    <tbody>${rows.map(s=>`
+      <tr>
+        <td data-label="門店">${storeName(s.store_id)}</td>
+        <td data-label="盤點人">${s.counter_name}</td>
+        <td data-label="簽名時間">${fmtDT(new Date(s.signed_at).getTime())}</td>
+        <td data-label="簽名"><img src="${s.signature_data}" style="height:36px;background:#fff;border:1px solid var(--gray-20);border-radius:4px;"></td>
+      </tr>`).join('')}</tbody>
+  </table>`;
 }
 function exportReportsExcel(){
   const month = document.getElementById('reportMonthSelect').value;
@@ -1117,7 +1140,7 @@ document.addEventListener('click', e=>{
   if (!e.target.closest('#backupMenu') && e.target.tagName!=='BUTTON'){ menu.style.display='none'; }
 });
 // store_pins/factory_auth（登入密碼雜湊）刻意不納入備份範圍，避免明碼備份檔外流等同洩漏所有登入密碼
-const BACKUP_TABLES = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','batch_history'];
+const BACKUP_TABLES = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','batch_history','counting_sessions'];
 async function exportBackup(){
   toggleBackupMenu();
   const tables = {};

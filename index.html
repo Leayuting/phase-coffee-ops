@@ -140,7 +140,7 @@ tr.batch-row.pending{opacity:.6;}
   </header>
   <div id="recallBanner" class="recall-banner" style="display:none;" onclick="openRecallModal()"></div>
   <div id="announcementBanner" class="recall-banner" style="display:none;background:#3D2A1C;" onclick="openAnnouncementModal()"></div>
-  <div id="counterBar" class="counter-bar" onclick="openCounterNameModal()"></div>
+  <div id="counterBar" class="counter-bar"></div>
   <div class="tabs">
     <button class="tab-btn active" data-tab="retail" onclick="switchTab('retail')">架上販售豆</button>
     <button class="tab-btn" data-tab="brew" onclick="switchTab('brew')">門市沖煮豆</button>
@@ -375,7 +375,9 @@ function touchCounterTimestamp(){
 }
 function renderCounterBar(){
   const el = document.getElementById('counterBar');
-  el.textContent = counterName ? `盤點人：${counterName}（點此更換）` : '尚未設定盤點人，點此設定';
+  el.innerHTML = counterName
+    ? `<span onclick="openCounterNameModal()" style="cursor:pointer;">盤點人：${counterName}（點此更換）</span>　<span onclick="openEndCountingModal()" style="cursor:pointer;text-decoration:underline;">結束盤點並簽名</span>`
+    : `<span onclick="openCounterNameModal()" style="cursor:pointer;">尚未設定盤點人，點此設定</span>`;
 }
 function ensureCounterName(onReady){
   if (STORE_ROLE==='viewer'){ toast('檢視模式無法執行此操作'); return; }
@@ -402,6 +404,60 @@ function confirmCounterName(){
   renderCounterBar();
   closeModal();
   if (pendingCounterCallback){ const cb = pendingCounterCallback; pendingCounterCallback = null; cb(); }
+}
+
+// ══════════ 結束盤點電子簽名 ══════════
+let sigCtx = null, sigDrawing = false, sigHasContent = false;
+function openEndCountingModal(){
+  if (!counterName){ toast('目前尚未設定盤點人'); return; }
+  openModal(`
+    <h3>結束盤點簽名</h3>
+    <div class="field"><label>盤點人</label><div>${counterName}</div></div>
+    <div class="field">
+      <label>請簽名以示本人確認本次盤點</label>
+      <canvas id="sigCanvas" width="500" height="200" style="border:1px solid var(--gray-30);border-radius:8px;touch-action:none;width:100%;height:180px;background:#fff;display:block;"></canvas>
+      <button class="btn-outline" style="margin-top:8px;" onclick="clearSignature()">清除重簽</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="confirmEndCounting()">確認送出</button>
+    </div>`);
+  setTimeout(initSignaturePad, 50);
+}
+function initSignaturePad(){
+  const canvas = document.getElementById('sigCanvas');
+  if (!canvas) return;
+  sigCtx = canvas.getContext('2d');
+  sigCtx.lineWidth = 2.5;
+  sigCtx.lineCap = 'round';
+  sigCtx.strokeStyle = '#111';
+  sigHasContent = false;
+  function pos(e){
+    const rect = canvas.getBoundingClientRect();
+    return { x:(e.clientX-rect.left)*(canvas.width/rect.width), y:(e.clientY-rect.top)*(canvas.height/rect.height) };
+  }
+  canvas.onpointerdown = (e)=>{ e.preventDefault(); sigDrawing = true; sigHasContent = true; const p = pos(e); sigCtx.beginPath(); sigCtx.moveTo(p.x, p.y); };
+  canvas.onpointermove = (e)=>{ if (!sigDrawing) return; e.preventDefault(); const p = pos(e); sigCtx.lineTo(p.x, p.y); sigCtx.stroke(); };
+  canvas.onpointerup = ()=>{ sigDrawing = false; };
+  canvas.onpointerleave = ()=>{ sigDrawing = false; };
+}
+function clearSignature(){
+  const canvas = document.getElementById('sigCanvas');
+  if (!canvas || !sigCtx) return;
+  sigCtx.clearRect(0, 0, canvas.width, canvas.height);
+  sigHasContent = false;
+}
+async function confirmEndCounting(){
+  if (!sigHasContent){ toast('請先簽名'); return; }
+  const canvas = document.getElementById('sigCanvas');
+  const signature_data = canvas.toDataURL('image/png');
+  const { error } = await sb.from('counting_sessions').insert({ store_id:STORE_ID, counter_name:counterName, signature_data });
+  if (error){ toast('簽名失敗：'+error.message); return; }
+  localStorage.removeItem(counterKey());
+  counterName = null;
+  renderCounterBar();
+  closeModal();
+  toast('已完成盤點簽名');
 }
 
 async function loadAll(){
