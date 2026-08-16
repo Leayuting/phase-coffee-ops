@@ -427,14 +427,20 @@ function openEndCountingModal(){
 function initSignaturePad(){
   const canvas = document.getElementById('sigCanvas');
   if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
   sigCtx = canvas.getContext('2d');
+  sigCtx.scale(dpr, dpr);
   sigCtx.lineWidth = 2.5;
   sigCtx.lineCap = 'round';
+  sigCtx.lineJoin = 'round';
   sigCtx.strokeStyle = '#111';
   sigHasContent = false;
   function pos(e){
-    const rect = canvas.getBoundingClientRect();
-    return { x:(e.clientX-rect.left)*(canvas.width/rect.width), y:(e.clientY-rect.top)*(canvas.height/rect.height) };
+    const r = canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
   canvas.onpointerdown = (e)=>{ e.preventDefault(); sigDrawing = true; sigHasContent = true; const p = pos(e); sigCtx.beginPath(); sigCtx.moveTo(p.x, p.y); };
   canvas.onpointermove = (e)=>{ if (!sigDrawing) return; e.preventDefault(); const p = pos(e); sigCtx.lineTo(p.x, p.y); sigCtx.stroke(); };
