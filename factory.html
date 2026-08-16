@@ -200,6 +200,10 @@ function fmtDT(ms){
   const s = taipeiShifted(ms);
   return `${s.getUTCMonth()+1}/${s.getUTCDate()} ${String(s.getUTCHours()).padStart(2,'0')}:${String(s.getUTCMinutes()).padStart(2,'0')}`;
 }
+function fmtDTFull(ms){
+  const s = taipeiShifted(ms);
+  return `${s.getUTCFullYear()}/${String(s.getUTCMonth()+1).padStart(2,'0')}/${String(s.getUTCDate()).padStart(2,'0')} ${String(s.getUTCHours()).padStart(2,'0')}:${String(s.getUTCMinutes()).padStart(2,'0')}`;
+}
 function todayTaipeiMidnightMs(nowMs){ const p = taipeiParts(nowMs); return Date.UTC(p.y,p.m,p.d,0,0,0); }
 function ageDaysOf(roastDateStr, nowMs){
   const [ry,rm,rd] = roastDateStr.split('-').map(Number);
@@ -212,6 +216,7 @@ let STORES = [], ITEMS_ALL = [], ITEMS = [];
 let BATCHES = [], RETURNS = [], TRANSFERS = [];
 let ANNOUNCEMENTS = [], RECEIPTS = [];
 let SIGNATURES = [];
+let COUNT_LOGS = [];
 
 const DECISIONS = ['調回','變成出杯豆','報廢','其他'];
 
@@ -284,7 +289,7 @@ if (localStorage.getItem(SESSION_KEY) === '1'){ enterApp(); } else { showLogin()
 async function loadAll(){
   setSyncStatus('loading');
   try{
-    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts},{data:signatures}] = await Promise.all([
+    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts},{data:signatures},{data:countLogs}] = await Promise.all([
       sb.from('stores').select('*').order('sort_order'),
       sb.from('items').select('*').order('sort_order'),
       sb.from('batches').select('*').neq('status','disposed').order('roast_date'),
@@ -292,10 +297,12 @@ async function loadAll(){
       sb.from('transfer_requests').select('*').order('requested_at',{ascending:false}),
       sb.from('announcements').select('*').order('created_at',{ascending:false}),
       sb.from('announcement_receipts').select('*'),
-      sb.from('counting_sessions').select('*').order('signed_at',{ascending:false}).limit(200)
+      sb.from('counting_sessions').select('*').order('signed_at',{ascending:false}).limit(200),
+      sb.from('batches').select('channel,last_counted_by,last_counted_at').not('last_counted_at','is',null).order('last_counted_at',{ascending:false}).limit(300)
     ]);
     STORES = stores || []; ITEMS_ALL = itemsAll || []; ITEMS = ITEMS_ALL.filter(i=>i.active);
     BATCHES = batches || []; RETURNS = returns || []; TRANSFERS = transfers || [];
+    COUNT_LOGS = countLogs || [];
     ANNOUNCEMENTS = announcements || []; RECEIPTS = receipts || [];
     SIGNATURES = signatures || [];
     setSyncStatus('ok');
@@ -550,6 +557,20 @@ async function onItemDragEnd(){
   loadAll();
 }
 
+function renderLatestCountBar(channel){
+  const latest = COUNT_LOGS.find(r => r.channel === channel);
+  if (!latest){
+    return `<div style="background:var(--warn);color:#fff;padding:10px 14px;border-radius:8px;font-weight:600;margin-bottom:12px;">尚無盤點紀錄</div>`;
+  }
+  const cp = taipeiParts(new Date(latest.last_counted_at).getTime());
+  const isToday = dateStr(cp.y, cp.m, cp.d) === todayStr();
+  const dtLabel = fmtDTFull(new Date(latest.last_counted_at).getTime());
+  const bg = isToday ? 'var(--ok)' : 'var(--danger)';
+  const text = isToday
+    ? `最新盤點：${latest.last_counted_by}｜${dtLabel}`
+    : `今日尚未盤點｜上次盤點：${latest.last_counted_by}｜${dtLabel}`;
+  return `<div style="background:${bg};color:#fff;padding:10px 14px;border-radius:8px;font-weight:600;margin-bottom:12px;">${text}</div>`;
+}
 // ══════════ 販售豆總覽（效期看板） ══════════
 function renderAlertTab(){
   renderBoardTab('retail', 'alert', '跨店批次效期看板', true);
@@ -596,6 +617,7 @@ function renderBoardTab(channel, tabId, title, isRetail){
     </details>`).join('') : `<div class="empty-msg">目前沒有批次資料</div>`;
 
   el.innerHTML = `
+    ${renderLatestCountBar(channel)}
     <div class="section">
       <h2>${title}<button class="btn-sm" onclick="openAddBatchModal('${channel}')">＋ 新增批次</button></h2>
       ${legendHtml}
