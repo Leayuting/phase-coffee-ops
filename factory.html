@@ -560,8 +560,10 @@ async function onItemDragEnd(){
 function renderLatestCountBar(channel){
   const cards = STORES.map(st=>{
     const latest = COUNT_LOGS.find(r => r.channel===channel && r.store_id===st.id);
+    const sig = SIGNATURES.find(s => s.store_id===st.id);
+    const sigLink = sig ? `<div style="margin-top:3px;"><span style="text-decoration:underline;cursor:pointer;font-weight:400;" onclick="viewSignature(${sig.id})">查看簽名</span></div>` : '';
     if (!latest){
-      return `<div style="background:var(--warn);color:#fff;padding:8px 12px;border-radius:8px;font-weight:600;font-size:12.5px;">${st.name}：尚無盤點紀錄</div>`;
+      return `<div style="background:var(--warn);color:#fff;padding:8px 12px;border-radius:8px;font-weight:600;font-size:12.5px;">${st.name}：尚無盤點紀錄${sigLink}</div>`;
     }
     const cp = taipeiParts(new Date(latest.last_counted_at).getTime());
     const isToday = dateStr(cp.y, cp.m, cp.d) === todayStr();
@@ -570,9 +572,20 @@ function renderLatestCountBar(channel){
     const text = isToday
       ? `${st.name}：最新盤點 ${latest.last_counted_by}｜${dtLabel}`
       : `${st.name}：今日尚未盤點｜上次 ${latest.last_counted_by}｜${dtLabel}`;
-    return `<div style="background:${bg};color:#fff;padding:8px 12px;border-radius:8px;font-weight:600;font-size:12.5px;">${text}</div>`;
+    return `<div style="background:${bg};color:#fff;padding:8px 12px;border-radius:8px;font-weight:600;font-size:12.5px;">${text}${sigLink}</div>`;
   });
   return `<div class="grid3" style="margin-bottom:12px;">${cards.join('')}</div>`;
+}
+function viewSignature(sigId){
+  const sig = SIGNATURES.find(s=>s.id===sigId);
+  if (!sig) return;
+  openModal(`
+    <h3>盤點簽名</h3>
+    <div class="field"><label>門店</label><div>${storeName(sig.store_id)}</div></div>
+    <div class="field"><label>盤點人</label><div>${sig.counter_name}</div></div>
+    <div class="field"><label>簽名時間</label><div>${fmtDTFull(new Date(sig.signed_at).getTime())}</div></div>
+    <div class="field"><label>簽名</label><img src="${sig.signature_data}" style="width:100%;background:#fff;border:1px solid var(--gray-20);border-radius:8px;"></div>
+    <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">關閉</button></div>`);
 }
 // ══════════ 販售豆總覽（效期看板） ══════════
 function renderAlertTab(){
