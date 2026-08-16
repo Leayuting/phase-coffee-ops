@@ -118,6 +118,11 @@ tr.batch-row.pending{opacity:.6;}
     <div class="pin-keypad" id="pinKeypad"></div>
     <button class="btn-outline" style="margin-top:20px;" onclick="backToStoreSelect()">返回選擇門店</button>
   </div>
+  <div id="loginRoleSelect" style="display:none;">
+    <p style="font-size:17px;font-weight:700;margin-bottom:20px;">請選擇登入身分</p>
+    <button class="btn" style="width:100%;padding:16px;font-size:15px;margin-bottom:10px;" onclick="chooseRole('staff')">盤點作業</button>
+    <button class="btn-outline" style="width:100%;padding:16px;font-size:15px;" onclick="chooseRole('viewer')">僅檢視</button>
+  </div>
 </div>
 
 <div id="appRoot" style="display:none">
@@ -200,7 +205,7 @@ function ageDaysOf(roastDateStr, nowMs){
 }
 
 // ══════════ STATE ══════════
-let STORE_ID = null, STORE_NAME = '';
+let STORE_ID = null, STORE_NAME = '', STORE_ROLE = 'staff';
 let STORES = [], ITEMS = [];
 let BATCHES = [], RETURNS = [], MY_TRANSFERS = [], OTHER_BATCHES = [], MY_RECEIPTS = [];
 const TYPE_LABEL = { retail:'架上販售豆', brew:'門市沖煮豆', filter:'濾掛' };
@@ -290,13 +295,17 @@ async function submitPin(){
   const { data: ok } = await sb.rpc('verify_store_pin', { p_store_id: pinTargetStore, p_pin_hash: hash });
   pinChecking = false;
   if (ok){
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ store: pinTargetStore }));
-    enterStore(pinTargetStore);
+    document.getElementById('loginPinPad').style.display = 'none';
+    document.getElementById('loginRoleSelect').style.display = 'block';
   } else {
     const { data: hasPin } = await sb.rpc('store_has_pin', { p_store_id: pinTargetStore });
     document.getElementById('pinError').textContent = hasPin ? '密碼錯誤' : '此門店尚未設定 PIN，請聯絡管理者';
     setTimeout(()=>{ pinBuffer=''; renderPinDots(); document.getElementById('pinError').textContent=' '; }, 600);
   }
+}
+function chooseRole(role){
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ store: pinTargetStore, role }));
+  enterStore(pinTargetStore, role);
 }
 function logout(){
   localStorage.removeItem(SESSION_KEY);
@@ -312,26 +321,28 @@ async function init(){
 
   document.getElementById('pickerRoot').style.display = 'block';
 
-  let sessionStore = null;
+  let sessionStore = null, sessionRole = 'staff';
   try{
     const raw = localStorage.getItem(SESSION_KEY);
-    if (raw){ const parsed = JSON.parse(raw); if (STORES.find(x=>x.id===parsed.store)) sessionStore = parsed.store; }
+    if (raw){ const parsed = JSON.parse(raw); if (STORES.find(x=>x.id===parsed.store)){ sessionStore = parsed.store; sessionRole = parsed.role || 'staff'; } }
   }catch(e){}
 
   if (sessionStore){
-    enterStore(sessionStore);
+    enterStore(sessionStore, sessionRole);
   } else if (urlStore && STORES.find(x=>x.id===urlStore)){
     renderStorePicker(urlStore);
   } else {
     renderStorePicker(null);
   }
 }
-function enterStore(storeId){
+function enterStore(storeId, role){
   STORE_ID = storeId;
+  STORE_ROLE = role || 'staff';
   STORE_NAME = STORES.find(x=>x.id===storeId)?.name || storeId;
   document.getElementById('pickerRoot').style.display = 'none';
-  document.getElementById('storeName').textContent = STORE_NAME;
+  document.getElementById('storeName').textContent = STORE_NAME + (STORE_ROLE==='viewer' ? '（檢視模式）' : '');
   document.getElementById('appRoot').style.display = 'block';
+  document.getElementById('counterBar').style.display = STORE_ROLE==='viewer' ? 'none' : 'block';
   const lastTab = localStorage.getItem(LAST_TAB_KEY);
   if (lastTab && document.getElementById('tab-'+lastTab)) switchTab(lastTab);
   loadCounterName();
@@ -367,6 +378,7 @@ function renderCounterBar(){
   el.textContent = counterName ? `盤點人：${counterName}（點此更換）` : '尚未設定盤點人，點此設定';
 }
 function ensureCounterName(onReady){
+  if (STORE_ROLE==='viewer'){ toast('檢視模式無法執行此操作'); return; }
   refreshCounterFromStorage();
   if (counterName){ touchCounterTimestamp(); renderCounterBar(); onReady(); return; }
   pendingCounterCallback = onReady;
@@ -504,10 +516,10 @@ function openRecallModal(){
       <div class="addon-item" id="recall-item-${r.id}">
         <div>${itemName(r.item_id)} × ${r.quantity}（烘焙 ${r.roast_date}）<br>
           <span style="color:var(--gray-50)">工廠處置：${r.factory_decision||'—'}${r.decision_note ? '（'+r.decision_note+'）' : ''}</span></div>
-        <div style="display:flex;gap:6px;">
+        ${STORE_ROLE==='viewer' ? '' : `<div style="display:flex;gap:6px;">
           <button class="btn-sm" onclick="promptCompleteReturn(${r.id}, ${r.batch_id}, true)">標記完成</button>
           <button class="btn-outline" onclick="promptRejectReturn(${r.id}, true)">拒絕</button>
-        </div>
+        </div>`}
       </div>`).join('')}</div>
     <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">稍後再處理</button></div>`);
 }
@@ -539,7 +551,7 @@ function openAnnouncementModal(){
       <div class="addon-item" style="display:block;">
         <div style="font-weight:700;margin-bottom:4px;">${r.announcement.title||'（無標題）'}</div>
         <div style="white-space:pre-wrap;margin-bottom:8px;">${r.announcement.content}</div>
-        <button class="btn-sm" onclick="promptReceiptConfirm(${r.id}, true)">確認接收</button>
+        ${STORE_ROLE==='viewer' ? '' : `<button class="btn-sm" onclick="promptReceiptConfirm(${r.id}, true)">確認接收</button>`}
       </div>`).join('')}</div>
     <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">稍後再處理</button></div>`);
 }
@@ -561,7 +573,7 @@ function renderAnnouncementList(){
       <div style="white-space:pre-wrap;margin-bottom:8px;">${r.announcement.content}</div>
       ${r.received_at
         ? `<div style="color:var(--gray-50);font-size:12px;">由 ${r.received_by} 於 ${fmtDTShort(r.received_at)} 確認接收</div>`
-        : `<button class="btn-sm" onclick="promptReceiptConfirm(${r.id}, false)">確認接收</button>`}
+        : (STORE_ROLE==='viewer' ? '' : `<button class="btn-sm" onclick="promptReceiptConfirm(${r.id}, false)">確認接收</button>`)}
     </div>`).join('');
 }
 function fmtDTShort(iso){
@@ -595,7 +607,7 @@ function renderTab(type){
   const el = document.getElementById('tab-'+type);
   el.innerHTML = `
     <div class="section">
-      <h2>本店庫存<button class="btn-sm" onclick="openAddBatchModal('${type}')">＋ 新增庫存</button></h2>
+      <h2>本店庫存${STORE_ROLE==='viewer' ? '' : `<button class="btn-sm" onclick="openAddBatchModal('${type}')">＋ 新增庫存</button>`}</h2>
       ${type==='retail' ? `<div class="legend"><span><i style="background:#e8c43a"></i>烘焙14–20天</span><span><i style="background:#c0453a"></i>烘焙21天以上</span></div>` : ''}
       <div id="${type}-batchList">${renderBatchList(type)}</div>
     </div>
@@ -636,7 +648,7 @@ function renderBatchRow(b, type){
   return `<tr class="batch-row ${ageCls} ${pending?'pending':''}">
     <td data-label="品項">${itemName(b.item_id)}</td>
     <td data-label="日期" class="batch-info"><span class="date-age">${b.roast_date} <span class="roast">（${age}天）</span>${pending?'<span class="badge">待回收完成</span>':''}</span></td>
-    <td data-label="包數"><input class="batch-qty-input" type="number" min="0" value="${b.quantity}" ${pending?'disabled':''}
+    <td data-label="包數"><input class="batch-qty-input" type="number" min="0" value="${b.quantity}" ${(pending||STORE_ROLE==='viewer')?'disabled':''}
       onchange="updateBatchQty(${b.id}, this.value)"></td>
   </tr>`;
 }
@@ -707,7 +719,7 @@ function renderReturnList(channel){
         <span style="color:var(--gray-50)">工廠處置：${r.factory_decision||'—'}${r.decision_note ? '（'+r.decision_note+'）' : ''}${r.completed_by ? '　由 '+r.completed_by+(r.status==='rejected'?' 拒絕':' 完成') : ''}</span>
         ${r.reject_reason ? `<br><span style="color:var(--danger)">拒絕原因：${r.reject_reason}</span>` : ''}</div>
       ${r.status==='pending'
-        ? `<div style="display:flex;gap:6px;"><button class="btn-sm" onclick="promptCompleteReturn(${r.id}, ${r.batch_id}, false)">標記完成</button><button class="btn-outline" onclick="promptRejectReturn(${r.id}, false)">拒絕</button></div>`
+        ? (STORE_ROLE==='viewer' ? `<span class="status-pill status-pending">${label.pending}</span>` : `<div style="display:flex;gap:6px;"><button class="btn-sm" onclick="promptCompleteReturn(${r.id}, ${r.batch_id}, false)">標記完成</button><button class="btn-outline" onclick="promptRejectReturn(${r.id}, false)">拒絕</button></div>`)
         : `<span class="status-pill ${cls[r.status]}">${label[r.status]}</span>`}
     </div>`).join('');
 }
@@ -827,7 +839,7 @@ async function loadOtherStock(){
 }
 function renderOtherStockList(){
   const el = document.getElementById('otherStockList');
-  el.innerHTML = groupedStockHtml(OTHER_BATCHES, true);
+  el.innerHTML = groupedStockHtml(OTHER_BATCHES, STORE_ROLE!=='viewer');
 }
 function openTransferRequestModal(batchId){
   ensureCounterName(()=>doOpenTransferRequestModal(batchId));
