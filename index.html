@@ -379,7 +379,7 @@ function renderCounterBar(){
   el.innerHTML = counterName
     ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
         <span onclick="openCounterNameModal()" style="cursor:pointer;">盤點人：${counterName}（點此更換）</span>
-        <button class="btn" style="padding:6px 14px;font-size:12.5px;" onclick="openEndCountingModal()">✓ 結束盤點並簽名</button>
+        <button class="btn" style="padding:6px 14px;font-size:12.5px;background:var(--ok);" onclick="openEndCountingModal()">✓ 結束盤點並簽名</button>
       </div>`
     : `<span onclick="openCounterNameModal()" style="cursor:pointer;">尚未設定盤點人，點此設定</span>`;
 }
