@@ -140,6 +140,7 @@ tr.batch-row.pending{opacity:.6;}
   </header>
   <div id="recallBanner" class="recall-banner" style="display:none;" onclick="openRecallModal()"></div>
   <div id="announcementBanner" class="recall-banner" style="display:none;background:#3D2A1C;" onclick="openAnnouncementModal()"></div>
+  <div id="transferInBanner" class="recall-banner" style="display:none;background:#4a7c6f;" onclick="openTransferInModal()"></div>
   <div id="counterBar" class="counter-bar"></div>
   <div class="tabs">
     <button class="tab-btn active" data-tab="retail" onclick="switchTab('retail')">架上販售豆</button>
@@ -156,6 +157,7 @@ tr.batch-row.pending{opacity:.6;}
     <section id="tab-announcements" class="tab-panel"></section>
   </main>
   <div id="lastCountedFooter" class="counter-bar" style="cursor:default;"></div>
+  <button id="fabAddStock" class="btn" style="display:none;position:fixed;bottom:22px;right:18px;border-radius:28px;padding:13px 20px;box-shadow:0 4px 14px rgba(0,0,0,.28);z-index:80;" onclick="openAddBatchModal(CURRENT_TAB)">＋ 新增庫存</button>
 </div>
 
 <div class="overlay" id="overlay"><div class="modal" id="modalBody"></div></div>
@@ -206,8 +208,10 @@ function ageDaysOf(roastDateStr, nowMs){
 
 // ══════════ STATE ══════════
 let STORE_ID = null, STORE_NAME = '', STORE_ROLE = 'staff';
+let CURRENT_TAB = 'retail';
 let STORES = [], ITEMS = [];
 let BATCHES = [], RETURNS = [], MY_TRANSFERS = [], OTHER_BATCHES = [], MY_RECEIPTS = [];
+let INCOMING_TRANSFERS = [];
 const TYPE_LABEL = { retail:'架上販售豆', brew:'門市沖煮豆', filter:'濾掛' };
 const CAT_META = {
   G: { zh:'蜜處理・日曬', color:'#b0b0b0', text:'var(--black)' },
@@ -345,6 +349,7 @@ function enterStore(storeId, role){
   document.getElementById('counterBar').style.display = STORE_ROLE==='viewer' ? 'none' : 'block';
   const lastTab = localStorage.getItem(LAST_TAB_KEY);
   if (lastTab && document.getElementById('tab-'+lastTab)) switchTab(lastTab);
+  updateAddStockFab();
   loadCounterName();
   loadAll();
   subscribeRealtime();
@@ -413,7 +418,9 @@ function confirmCounterName(){
 // ══════════ 結束盤點電子簽名 ══════════
 let sigCtx = null, sigDrawing = false, sigHasContent = false;
 function openEndCountingModal(){
-  if (!counterName){ toast('目前尚未設定盤點人'); return; }
+  ensureCounterName(doOpenEndCountingModal);
+}
+function doOpenEndCountingModal(){
   openModal(`
     <h3>結束盤點簽名</h3>
     <div class="field"><label>盤點人</label><div>${counterName}</div></div>
@@ -473,15 +480,17 @@ async function confirmEndCounting(){
 async function loadAll(){
   setSyncStatus('loading');
   try{
-    const [{data:items}, {data:batches}, {data:returns}, {data:transfers}, {data:receipts}] = await Promise.all([
+    const [{data:items}, {data:batches}, {data:returns}, {data:transfers}, {data:receipts}, {data:incoming}] = await Promise.all([
       sb.from('items').select('*').eq('active', true).order('sort_order'),
       sb.from('batches').select('*').eq('store_id', STORE_ID).neq('status','disposed').order('roast_date'),
       sb.from('returns').select('*').eq('store_id', STORE_ID).order('submitted_at', {ascending:false}),
       sb.from('transfer_requests').select('*').eq('requesting_store_id', STORE_ID).order('requested_at', {ascending:false}),
-      sb.from('announcement_receipts').select('*, announcement:announcements(*)').eq('store_id', STORE_ID)
+      sb.from('announcement_receipts').select('*, announcement:announcements(*)').eq('store_id', STORE_ID),
+      sb.from('transfer_requests').select('*').eq('source_store_id', STORE_ID).order('requested_at', {ascending:false})
     ]);
     ITEMS = items || []; BATCHES = batches || []; RETURNS = returns || []; MY_TRANSFERS = transfers || [];
     MY_RECEIPTS = (receipts || []).sort((a,b)=> new Date(b.announcement.created_at) - new Date(a.announcement.created_at));
+    INCOMING_TRANSFERS = incoming || [];
     setSyncStatus('ok');
   }catch(e){ console.error(e); setSyncStatus('local'); }
   render();
@@ -526,6 +535,14 @@ function switchTab(tab){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active', p.id==='tab-'+tab));
   localStorage.setItem(LAST_TAB_KEY, tab);
+  CURRENT_TAB = tab;
+  updateAddStockFab();
+}
+function updateAddStockFab(){
+  const fab = document.getElementById('fabAddStock');
+  if (!fab) return;
+  const show = STORE_ROLE!=='viewer' && ['retail','brew','filter'].includes(CURRENT_TAB);
+  fab.style.display = show ? 'block' : 'none';
 }
 
 // ══════════ RENDER ══════════
@@ -533,6 +550,7 @@ function render(){
   ['retail','brew','filter'].forEach(renderTab);
   checkRecallNotifications();
   renderOtherStockTab();
+  checkTransferInNotifications();
   checkAnnouncementNotifications();
   renderAnnouncementsTab();
   renderAnnouncementMarquee();
@@ -673,7 +691,7 @@ function renderTab(type){
   const el = document.getElementById('tab-'+type);
   el.innerHTML = `
     <div class="section">
-      <h2>本店庫存${STORE_ROLE==='viewer' ? '' : `<button class="btn-sm" onclick="openAddBatchModal('${type}')">＋ 新增庫存</button>`}</h2>
+      <h2>本店庫存</h2>
       ${type==='retail' ? `<div class="legend"><span><i style="background:#e8c43a"></i>烘焙14–20天</span><span><i style="background:#c0453a"></i>烘焙21天以上</span></div>` : ''}
       <div id="${type}-batchList">${renderBatchList(type)}</div>
     </div>
@@ -858,12 +876,18 @@ function renderOtherStockTab(){
         <h2>我的調貨申請</h2>
         <p style="color:var(--gray-50);font-size:12px;margin-bottom:8px;">核准後系統不會自動調整雙方庫存數量，請雙方門店自行盤點調整。</p>
         <div id="transferRequestList"></div>
+      </div>
+      <div class="section">
+        <h2>其他門店的調貨申請</h2>
+        <p style="color:var(--gray-50);font-size:12px;margin-bottom:8px;">其他門店想調本店的庫存時會顯示在這裡，待審核時可以先拒絕。</p>
+        <div id="incomingTransferList"></div>
       </div>`;
     otherStockShellBuilt = true;
   }
   if (STORES.filter(s=>s.id!==STORE_ID).length) loadOtherStock();
   renderOwnStockSummary();
   renderMyTransfers();
+  renderIncomingTransfers();
 }
 function groupedStockHtml(batchList, allowTransferRequest){
   if (!batchList.length) return `<div class="empty-msg">目前沒有庫存資料</div>`;
@@ -952,6 +976,88 @@ function renderMyTransfers(){
         <span style="color:var(--gray-50)">${t.reason||''}${t.decision_note ? '　回覆：'+t.decision_note : ''}</span></div>
       <span class="status-pill ${cls[t.status]}">${label[t.status]}</span>
     </div>`).join('');
+}
+
+// ══════════ 其他門店調貨申請通知（本店為來源店） ══════════
+let notifiedIncomingTransferKeys = new Set();
+function pendingIncomingTransfers(){ return INCOMING_TRANSFERS.filter(t=>t.status==='pending'); }
+function actionableIncomingTransfers(){ return INCOMING_TRANSFERS.filter(t=>t.status==='pending' || t.status==='approved'); }
+function checkTransferInNotifications(){
+  const relevant = actionableIncomingTransfers();
+  const banner = document.getElementById('transferInBanner');
+  if (relevant.length){
+    const pendingCount = relevant.filter(t=>t.status==='pending').length;
+    const approvedCount = relevant.filter(t=>t.status==='approved').length;
+    const parts = [];
+    if (pendingCount) parts.push(`${pendingCount} 筆待審核`);
+    if (approvedCount) parts.push(`${approvedCount} 筆已核准待出貨`);
+    banner.style.display = 'block';
+    banner.textContent = `📦 調貨通知：${parts.join('、')}，點此查看`;
+  } else {
+    banner.style.display = 'none';
+  }
+  const newOnes = relevant.filter(t=>!notifiedIncomingTransferKeys.has(t.id+':'+t.status));
+  if (newOnes.length){
+    newOnes.forEach(t=>notifiedIncomingTransferKeys.add(t.id+':'+t.status));
+    openTransferInModal();
+  }
+}
+function openTransferInModal(){
+  const relevant = actionableIncomingTransfers();
+  if (!relevant.length){ closeModal(); return; }
+  openModal(`
+    <h3>其他門店的調貨申請</h3>
+    <div>${relevant.map(t=>`
+      <div class="addon-item">
+        <div>${storeNameOf(t.requesting_store_id)} 想調 ${itemName(t.item_id)} × ${t.quantity}（${TYPE_LABEL[t.channel]}）<br>
+          <span style="color:var(--gray-50)">${t.reason||''}</span></div>
+        ${t.status==='pending'
+          ? (STORE_ROLE==='viewer' ? '<span class="status-pill status-pending">待審核</span>' : `<button class="btn-outline" onclick="promptRejectIncomingTransfer(${t.id}, true)">拒絕</button>`)
+          : `<span class="status-pill status-approved">已核准，請準備出貨</span>`}
+      </div>`).join('')}</div>
+    <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">關閉</button></div>`);
+}
+function renderIncomingTransfers(){
+  const el = document.getElementById('incomingTransferList');
+  if (!el) return;
+  if (!INCOMING_TRANSFERS.length){ el.innerHTML = `<div class="empty-msg">目前沒有其他門店申請調本店庫存</div>`; return; }
+  const label = { pending:'待審核', approved:'已核准（請準備出貨）', rejected:'已拒絕' };
+  const cls = { pending:'status-pending', approved:'status-approved', rejected:'status-rejected' };
+  el.innerHTML = INCOMING_TRANSFERS.map(t=>`
+    <div class="addon-item">
+      <div>${storeNameOf(t.requesting_store_id)} 申請調 ${itemName(t.item_id)} × ${t.quantity}（${TYPE_LABEL[t.channel]}）<br>
+        <span style="color:var(--gray-50)">${t.reason||''}${t.decision_note ? '　備註：'+t.decision_note : ''}</span></div>
+      ${t.status==='pending' && STORE_ROLE!=='viewer'
+        ? `<button class="btn-outline" onclick="promptRejectIncomingTransfer(${t.id}, false)">拒絕</button>`
+        : `<span class="status-pill ${cls[t.status]}">${label[t.status]}</span>`}
+    </div>`).join('');
+}
+function promptRejectIncomingTransfer(id, backToList){
+  const t = INCOMING_TRANSFERS.find(x=>x.id===id);
+  if (!t) return;
+  openModal(`
+    <h3>拒絕調貨申請</h3>
+    <div class="field"><label>申請門店</label><div>${storeNameOf(t.requesting_store_id)}</div></div>
+    <div class="field"><label>品項</label><div>${itemName(t.item_id)} × ${t.quantity}（${TYPE_LABEL[t.channel]}）</div></div>
+    <div class="field"><label>拒絕原因</label><textarea id="transferRejectReason" placeholder="請說明拒絕原因…"></textarea></div>
+    <div class="field"><label>經手人姓名（以示負責）</label><input type="text" id="transferRejectName" placeholder="請輸入姓名"></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="${backToList ? 'openTransferInModal()' : 'closeModal()'}">取消</button>
+      <button class="btn" onclick="confirmRejectIncomingTransfer(${id}, ${backToList})">確認拒絕</button>
+    </div>`);
+}
+async function confirmRejectIncomingTransfer(id, backToList){
+  const reason = document.getElementById('transferRejectReason').value.trim();
+  const name = document.getElementById('transferRejectName').value.trim();
+  if (!reason){ toast('請輸入拒絕原因'); return; }
+  if (!name){ toast('請輸入姓名'); return; }
+  const { data, error } = await sb.from('transfer_requests').update({
+    status:'rejected', decision_note:`【${STORE_NAME}拒絕，經手人：${name}】${reason}`, decided_at:new Date().toISOString()
+  }).eq('id', id).eq('status','pending').select();
+  if (error){ toast('操作失敗：'+error.message); return; }
+  if (!data || !data.length){ toast('此申請已被處理，無法再拒絕'); await loadAll(); closeModal(); return; }
+  toast('已拒絕調貨申請'); await loadAll();
+  if (backToList && pendingIncomingTransfers().length) openTransferInModal(); else closeModal();
 }
 
 // ══════════ MODALS ══════════
