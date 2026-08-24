@@ -912,8 +912,8 @@ function groupedStockHtml(batchList, allowTransferRequest){
     return `<div class="item-group">
       <div class="item-group-title">${TYPE_LABEL[ch]}</div>
       ${ch==='retail' ? `<div class="legend"><span><i style="background:#e8c43a"></i>烘焙14–20天</span><span><i style="background:#c0453a"></i>烘焙21天以上</span></div>` : ''}
-      <table class="batch-table">
-        <thead><tr><th>品項</th><th>日期</th><th>包數</th><th></th></tr></thead>
+      <table class="batch-table${allowTransferRequest ? ' transfer-table' : ''}">
+        <thead><tr><th>品項</th><th>日期</th><th>包數</th>${allowTransferRequest ? '<th></th>' : ''}</tr></thead>
         <tbody>${rows.map(b=>{
           const age = ageDaysOf(b.roast_date, Date.now());
           let ageCls = '';
@@ -922,7 +922,7 @@ function groupedStockHtml(batchList, allowTransferRequest){
             <td data-label="品項">${itemName(b.item_id)}</td>
             <td data-label="日期"><span class="date-age">${b.roast_date}（${age}天）</span></td>
             <td data-label="包數">${b.quantity}</td>
-            <td data-label="">${allowTransferRequest ? `<button class="btn-sm" onclick="openTransferRequestModal(${b.id})">申請調貨</button>` : ''}</td>
+            ${allowTransferRequest ? `<td data-label=""><button class="btn-sm" onclick="openTransferRequestModal(${b.id})">申請調貨</button></td>` : ''}
           </tr>`;
         }).join('')}</tbody>
       </table>
