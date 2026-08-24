@@ -368,7 +368,11 @@ function enterStore(storeId, role){
   loadCounterName();
   loadAll();
   subscribeRealtime();
-  setInterval(()=>{ if (!isEditingInput()) render(); }, 30000);
+  setInterval(()=>{
+    if (isEditingInput()) return;
+    if (STORE_ROLE !== 'viewer') loadCounterName();
+    render();
+  }, 30000);
   if (STORE_ROLE !== 'viewer') openCounterNameModal();
 }
 
