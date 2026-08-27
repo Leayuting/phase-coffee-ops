@@ -369,9 +369,11 @@ function enterStore(storeId, role){
   document.getElementById('storeName').textContent = STORE_NAME + (STORE_ROLE==='viewer' ? '（檢視模式）' : '');
   document.getElementById('appRoot').style.display = 'block';
   document.getElementById('counterBar').style.display = STORE_ROLE==='viewer' ? 'none' : 'block';
-  document.getElementById('cuppingTabBtn').style.display = CUPPING_ENABLED ? '' : 'none';
+  // 杯測刻意只給「僅檢視」身分操作，「盤點作業」身分完全不能碰（使用者明確要求兩者分開）
+  document.getElementById('cuppingTabBtn').style.display = (CUPPING_ENABLED && STORE_ROLE==='viewer') ? '' : 'none';
   const lastTab = localStorage.getItem(LAST_TAB_KEY);
-  if (lastTab && document.getElementById('tab-'+lastTab)) switchTab(lastTab);
+  if (lastTab && lastTab!=='cupping' && document.getElementById('tab-'+lastTab)) switchTab(lastTab);
+  else if (lastTab==='cupping' && STORE_ROLE==='viewer' && document.getElementById('tab-cupping')) switchTab(lastTab);
   updateAddStockFab();
   loadCounterName();
   loadAll();
@@ -1124,6 +1126,7 @@ let cuppingSelectedBeanId = null;
 function renderCuppingTab(){
   const el = document.getElementById('tab-cupping');
   if (!el) return;
+  if (STORE_ROLE !== 'viewer'){ el.innerHTML = ''; return; }
   if (!CUPPING_BEANS.length){ el.innerHTML = `<div class="section"><h2>杯測</h2><div class="empty-msg">工廠端尚未建立任何新豆</div></div>`; return; }
   if (!cuppingSelectedBeanId || !CUPPING_BEANS.find(b=>b.id===cuppingSelectedBeanId)) cuppingSelectedBeanId = CUPPING_BEANS[0].id;
   const overdue = CUPPING_BEANS.filter(b=>{
@@ -1159,7 +1162,8 @@ function cuppingScoreFieldHtml(f, value){
   return `<div class="field"><label>${CUPPING_SCORE_LABELS[f]}</label><select id="cs_${f}">${opts.map(o=>`<option value="${o}" ${String(value)===o?'selected':''}>${o}</option>`).join('')}</select></div>`;
 }
 function openCuppingScoreModal(beanId, participantName, existingId){
-  // 杯測評分刻意不受檢視模式限制：部分只需要杯測、不參與盤點的人員會用「僅檢視」身分登入
+  // 杯測只給「僅檢視」身分操作，「盤點作業」身分不行（分頁按鈕已隱藏，這裡是防呆二次確認）
+  if (STORE_ROLE !== 'viewer'){ toast('請以「僅檢視」身分登入才能操作杯測'); return; }
   const existing = existingId ? MY_CUPPING_SESSIONS.find(x=>x.id===existingId) : null;
   const defaultMid = { aroma:'8', flavor:'8', aftertaste:'8', acidity:'8', body:'8', balance:'8', overall:'8', uniformity:'10', clean_cup:'10', sweetness:'10' };
   const bean = CUPPING_BEANS.find(b=>b.id===beanId);
