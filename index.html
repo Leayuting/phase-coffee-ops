@@ -163,6 +163,7 @@ tr.batch-row.pending{opacity:.6;}
     <button class="tab-btn" data-tab="filter" onclick="switchTab('filter')">濾掛</button>
     <button class="tab-btn" data-tab="otherstock" onclick="switchTab('otherstock')">其他店庫存</button>
     <button class="tab-btn" data-tab="announcements" onclick="switchTab('announcements')">公告</button>
+    <button class="tab-btn" data-tab="cupping" onclick="switchTab('cupping')" id="cuppingTabBtn" style="display:none;">杯測</button>
   </div>
   <main>
     <section id="tab-retail" class="tab-panel active"></section>
@@ -170,6 +171,7 @@ tr.batch-row.pending{opacity:.6;}
     <section id="tab-filter" class="tab-panel"></section>
     <section id="tab-otherstock" class="tab-panel"></section>
     <section id="tab-announcements" class="tab-panel"></section>
+    <section id="tab-cupping" class="tab-panel"></section>
   </main>
   <div id="lastCountedFooter" class="counter-bar" style="cursor:default;"></div>
   <button id="fabAddStock" class="btn" style="display:none;position:fixed;bottom:22px;right:18px;border-radius:28px;padding:13px 20px;box-shadow:0 4px 14px rgba(0,0,0,.28);z-index:80;" onclick="openAddBatchModal(CURRENT_TAB)">＋ 新增庫存</button>
@@ -228,6 +230,11 @@ let STORES = [], ITEMS = [];
 let BATCHES = [], RETURNS = [], MY_TRANSFERS = [], OTHER_BATCHES = [], MY_RECEIPTS = [];
 let INCOMING_TRANSFERS = [];
 const TYPE_LABEL = { retail:'架上販售豆', brew:'門市沖煮豆', filter:'濾掛' };
+
+// 杯測模組啟用開關：設為 false 可立即停用整個杯測分頁，不影響其他既有功能。
+// 三張 cupping_* 表皆為新增式，如需完全復原只要 drop table，不涉及任何既有表。
+const CUPPING_ENABLED = true;
+let CUPPING_BEANS = [], MY_CUPPING_PARTICIPANTS = [], MY_CUPPING_SESSIONS = [];
 const CAT_META = {
   G: { zh:'蜜處理・日曬', color:'#b0b0b0', text:'var(--black)' },
   Y: { zh:'水洗',         color:'#e8c43a', text:'var(--black)' },
@@ -362,6 +369,7 @@ function enterStore(storeId, role){
   document.getElementById('storeName').textContent = STORE_NAME + (STORE_ROLE==='viewer' ? '（檢視模式）' : '');
   document.getElementById('appRoot').style.display = 'block';
   document.getElementById('counterBar').style.display = STORE_ROLE==='viewer' ? 'none' : 'block';
+  document.getElementById('cuppingTabBtn').style.display = CUPPING_ENABLED ? '' : 'none';
   const lastTab = localStorage.getItem(LAST_TAB_KEY);
   if (lastTab && document.getElementById('tab-'+lastTab)) switchTab(lastTab);
   updateAddStockFab();
@@ -499,17 +507,30 @@ async function confirmEndCounting(){
 async function loadAll(){
   setSyncStatus('loading');
   try{
-    const [{data:items}, {data:batches}, {data:returns}, {data:transfers}, {data:receipts}, {data:incoming}] = await Promise.all([
+    const queries = [
       sb.from('items').select('*').eq('active', true).order('sort_order'),
       sb.from('batches').select('*').eq('store_id', STORE_ID).neq('status','disposed').order('roast_date'),
       sb.from('returns').select('*').eq('store_id', STORE_ID).order('submitted_at', {ascending:false}),
       sb.from('transfer_requests').select('*').eq('requesting_store_id', STORE_ID).order('requested_at', {ascending:false}),
       sb.from('announcement_receipts').select('*, announcement:announcements(*)').eq('store_id', STORE_ID),
       sb.from('transfer_requests').select('*').eq('source_store_id', STORE_ID).order('requested_at', {ascending:false})
-    ]);
+    ];
+    if (CUPPING_ENABLED){
+      queries.push(
+        sb.from('cupping_beans').select('*').order('created_at', {ascending:false}),
+        sb.from('cupping_participants').select('*').eq('store_id', STORE_ID).eq('active', true).order('name'),
+        sb.from('cupping_sessions').select('*').eq('source','store').eq('store_id', STORE_ID)
+      );
+    }
+    const [{data:items}, {data:batches}, {data:returns}, {data:transfers}, {data:receipts}, {data:incoming}, cuppingBeansRes, cuppingParticipantsRes, cuppingSessionsRes] = await Promise.all(queries);
     ITEMS = items || []; BATCHES = batches || []; RETURNS = returns || []; MY_TRANSFERS = transfers || [];
     MY_RECEIPTS = (receipts || []).sort((a,b)=> new Date(b.announcement.created_at) - new Date(a.announcement.created_at));
     INCOMING_TRANSFERS = incoming || [];
+    if (CUPPING_ENABLED){
+      CUPPING_BEANS = (cuppingBeansRes && cuppingBeansRes.data) || [];
+      MY_CUPPING_PARTICIPANTS = (cuppingParticipantsRes && cuppingParticipantsRes.data) || [];
+      MY_CUPPING_SESSIONS = (cuppingSessionsRes && cuppingSessionsRes.data) || [];
+    }
     setSyncStatus('ok');
   }catch(e){ console.error(e); setSyncStatus('local'); }
   render();
@@ -538,6 +559,7 @@ document.addEventListener('focusout', ()=>{
 });
 function subscribeRealtime(){
   const tables = ['items','batches','returns','transfer_requests','announcements','announcement_receipts'];
+  if (CUPPING_ENABLED) tables.push('cupping_beans','cupping_participants','cupping_sessions');
   const ch = sb.channel('store-realtime-'+STORE_ID);
   tables.forEach(t=>{
     ch.on('postgres_changes', { event:'*', schema:'public', table:t }, scheduleReload);
@@ -574,6 +596,7 @@ function render(){
   renderAnnouncementsTab();
   renderAnnouncementMarquee();
   renderLastCountedFooter();
+  if (CUPPING_ENABLED) renderCuppingTab();
 }
 function renderLastCountedFooter(){
   const el = document.getElementById('lastCountedFooter');
@@ -1077,6 +1100,101 @@ async function confirmRejectIncomingTransfer(id, backToList){
   if (!data || !data.length){ toast('此申請已被處理，無法再拒絕'); await loadAll(); closeModal(); return; }
   toast('已拒絕調貨申請'); await loadAll();
   if (backToList && pendingIncomingTransfers().length) openTransferInModal(); else closeModal();
+}
+
+// ══════════ 杯測（獨立模組，僅使用 cupping_ 開頭的新表，不影響原有庫存/回收/公告邏輯） ══════════
+const CUPPING_SCORE_FIELDS = ['aroma','flavor','aftertaste','acidity','body','balance','uniformity','clean_cup','sweetness','overall'];
+const CUPPING_SCORE_LABELS = { aroma:'香氣 Aroma', flavor:'風味 Flavor', aftertaste:'餘韻 Aftertaste', acidity:'酸質 Acidity', body:'醇厚度 Body', balance:'平衡 Balance', uniformity:'一致性 Uniformity', clean_cup:'乾淨度 Clean Cup', sweetness:'甜感 Sweetness', overall:'整體 Overall' };
+const CUPPING_QUALITY_OPTS = ['6','6.25','6.5','6.75','7','7.25','7.5','7.75','8','8.25','8.5','8.75','9','9.25','9.5','9.75','10'];
+const CUPPING_EVEN_OPTS = ['0','2','4','6','8','10'];
+const CUPPING_DEFECT_OPTS = ['0','1','2','3','4','5'];
+function cuppingTotal(s){
+  const sum = CUPPING_SCORE_FIELDS.reduce((t,f)=>t+Number(s[f]||0),0);
+  return sum - (Number(s.taint_cups||0)*2 + Number(s.fault_cups||0)*4);
+}
+function isCuppingOverdue(b){
+  if (!b.store_deadline || b.bean_status==='已完成') return false;
+  return b.store_deadline < todayStr();
+}
+function cuppingMyCompletion(beanId){
+  const done = MY_CUPPING_PARTICIPANTS.filter(p=>MY_CUPPING_SESSIONS.some(s=>s.bean_id===beanId && s.participant_name===p.name)).length;
+  return { done, total: MY_CUPPING_PARTICIPANTS.length };
+}
+let cuppingSelectedBeanId = null;
+function renderCuppingTab(){
+  const el = document.getElementById('tab-cupping');
+  if (!el) return;
+  if (!CUPPING_BEANS.length){ el.innerHTML = `<div class="section"><h2>杯測</h2><div class="empty-msg">工廠端尚未建立任何新豆</div></div>`; return; }
+  if (!cuppingSelectedBeanId || !CUPPING_BEANS.find(b=>b.id===cuppingSelectedBeanId)) cuppingSelectedBeanId = CUPPING_BEANS[0].id;
+  const overdue = CUPPING_BEANS.filter(b=>{
+    if (!isCuppingOverdue(b)) return false;
+    const c = cuppingMyCompletion(b.id);
+    return c.total>0 && c.done<c.total;
+  });
+  const beanOpts = CUPPING_BEANS.map(b=>`<option value="${b.id}" ${cuppingSelectedBeanId===b.id?'selected':''}>${b.bean_code}｜${b.name}</option>`).join('');
+  const bean = CUPPING_BEANS.find(b=>b.id===cuppingSelectedBeanId);
+  el.innerHTML = `
+    ${overdue.length ? `<div class="section" style="background:#fbe4e1;"><b style="color:var(--danger);">⚠ 已逾杯測截止日，本店尚未完成：</b>${overdue.map(b=>b.name).join('、')}</div>` : ''}
+    <div class="section">
+      <h2>杯測</h2>
+      <div class="field"><label>選擇新豆</label><select id="cuppingBeanSelect" onchange="cuppingSelectedBeanId=Number(this.value); renderCuppingTab();">${beanOpts}</select></div>
+      ${bean ? `<div style="font-size:12.5px;color:var(--gray-70);margin-bottom:10px;">
+        處理法：${bean.process||'—'}・烘焙度：${bean.roast_level||'—'}${bean.store_deadline?`・杯測截止：${bean.store_deadline}${isCuppingOverdue(bean)?' <span style="color:var(--danger);font-weight:700;">已逾期</span>':''}`:''}
+      </div>` : ''}
+      ${MY_CUPPING_PARTICIPANTS.length ? `<table class="batch-table">
+        <thead><tr><th>杯測人員</th><th>狀態</th><th></th></tr></thead>
+        <tbody>${MY_CUPPING_PARTICIPANTS.map(p=>{
+          const s = MY_CUPPING_SESSIONS.find(x=>x.bean_id===cuppingSelectedBeanId && x.participant_name===p.name);
+          return `<tr>
+            <td data-label="杯測人員">${p.name}</td>
+            <td data-label="狀態">${s?'<span class="status-pill status-approved">✅ 已完成</span>':'<span class="status-pill status-pending">⏳ 未完成</span>'}</td>
+            <td data-label="">${STORE_ROLE==='viewer' ? '' : `<button class="btn-sm" onclick="openCuppingScoreModal(${cuppingSelectedBeanId}, '${p.name.replace(/'/g,"\\'")}', ${s?s.id:'null'})">${s?'編輯':'填寫評分'}</button>`}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>` : `<div class="empty-msg">工廠端尚未建立本店杯測人員名單</div>`}
+    </div>`;
+}
+function cuppingScoreFieldHtml(f, value){
+  const opts = (f==='uniformity'||f==='clean_cup'||f==='sweetness') ? CUPPING_EVEN_OPTS : CUPPING_QUALITY_OPTS;
+  return `<div class="field"><label>${CUPPING_SCORE_LABELS[f]}</label><select id="cs_${f}">${opts.map(o=>`<option value="${o}" ${String(value)===o?'selected':''}>${o}</option>`).join('')}</select></div>`;
+}
+function openCuppingScoreModal(beanId, participantName, existingId){
+  if (STORE_ROLE==='viewer'){ toast('檢視模式無法執行此操作'); return; }
+  const existing = existingId ? MY_CUPPING_SESSIONS.find(x=>x.id===existingId) : null;
+  const defaultMid = { aroma:'8', flavor:'8', aftertaste:'8', acidity:'8', body:'8', balance:'8', overall:'8', uniformity:'10', clean_cup:'10', sweetness:'10' };
+  const bean = CUPPING_BEANS.find(b=>b.id===beanId);
+  openModal(`
+    <h3>門店杯測評分｜${bean?bean.name:''}</h3>
+    <div class="field"><label>杯測人員</label><div>${participantName}</div></div>
+    ${CUPPING_SCORE_FIELDS.map(f=>cuppingScoreFieldHtml(f, existing?existing[f]:defaultMid[f])).join('')}
+    <div class="field"><label>Taint 杯數</label><select id="cs_taint">${CUPPING_DEFECT_OPTS.map(o=>`<option ${(existing?String(existing.taint_cups):'0')===o?'selected':''}>${o}</option>`).join('')}</select></div>
+    <div class="field"><label>Fault 杯數</label><select id="cs_fault">${CUPPING_DEFECT_OPTS.map(o=>`<option ${(existing?String(existing.fault_cups):'0')===o?'selected':''}>${o}</option>`).join('')}</select></div>
+    <div class="field"><label>風味 1</label><input type="text" id="cs_fn1" value="${existing?existing.flavor_note_1||'':''}"></div>
+    <div class="field"><label>風味 2</label><input type="text" id="cs_fn2" value="${existing?existing.flavor_note_2||'':''}"></div>
+    <div class="field"><label>風味 3</label><input type="text" id="cs_fn3" value="${existing?existing.flavor_note_3||'':''}"></div>
+    <div class="field"><label>感官備註</label><textarea id="cs_remark">${existing?existing.remark||'':''}</textarea></div>
+    ${existing ? `<p style="color:var(--gray-50);font-size:12px;margin-bottom:8px;">您先前已送出過這支豆的評分，這次送出會更新原本的紀錄。</p>` : ''}
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="saveCuppingScore(${beanId}, '${participantName.replace(/'/g,"\\'")}', ${existingId||'null'})">送出</button>
+    </div>`);
+}
+async function saveCuppingScore(beanId, participantName, existingId){
+  const payload = { bean_id:beanId, source:'store', store_id:STORE_ID, participant_name:participantName, session_date: todayStr() };
+  CUPPING_SCORE_FIELDS.forEach(f=>{ payload[f] = Number(document.getElementById('cs_'+f).value); });
+  payload.taint_cups = Number(document.getElementById('cs_taint').value);
+  payload.fault_cups = Number(document.getElementById('cs_fault').value);
+  payload.flavor_note_1 = document.getElementById('cs_fn1').value.trim() || null;
+  payload.flavor_note_2 = document.getElementById('cs_fn2').value.trim() || null;
+  payload.flavor_note_3 = document.getElementById('cs_fn3').value.trim() || null;
+  payload.remark = document.getElementById('cs_remark').value.trim() || null;
+  await guardSubmit('saveCuppingScore', async ()=>{
+    const { error } = existingId
+      ? await sb.from('cupping_sessions').update(payload).eq('id', existingId)
+      : await sb.from('cupping_sessions').insert(payload);
+    if (error){ toast('送出失敗：'+error.message); return; }
+    closeModal(); toast('已送出杯測評分'); loadAll();
+  });
 }
 
 // ══════════ MODALS ══════════
