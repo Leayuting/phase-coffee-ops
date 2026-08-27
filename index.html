@@ -1148,7 +1148,7 @@ function renderCuppingTab(){
           return `<tr>
             <td data-label="杯測人員">${p.name}</td>
             <td data-label="狀態">${s?'<span class="status-pill status-approved">✅ 已完成</span>':'<span class="status-pill status-pending">⏳ 未完成</span>'}</td>
-            <td data-label="">${STORE_ROLE==='viewer' ? '' : `<button class="btn-sm" onclick="openCuppingScoreModal(${cuppingSelectedBeanId}, '${p.name.replace(/'/g,"\\'")}', ${s?s.id:'null'})">${s?'編輯':'填寫評分'}</button>`}</td>
+            <td data-label=""><button class="btn-sm" onclick="openCuppingScoreModal(${cuppingSelectedBeanId}, '${p.name.replace(/'/g,"\\'")}', ${s?s.id:'null'})">${s?'編輯':'填寫評分'}</button></td>
           </tr>`;
         }).join('')}</tbody>
       </table>` : `<div class="empty-msg">工廠端尚未建立本店杯測人員名單</div>`}
@@ -1159,7 +1159,7 @@ function cuppingScoreFieldHtml(f, value){
   return `<div class="field"><label>${CUPPING_SCORE_LABELS[f]}</label><select id="cs_${f}">${opts.map(o=>`<option value="${o}" ${String(value)===o?'selected':''}>${o}</option>`).join('')}</select></div>`;
 }
 function openCuppingScoreModal(beanId, participantName, existingId){
-  if (STORE_ROLE==='viewer'){ toast('檢視模式無法執行此操作'); return; }
+  // 杯測評分刻意不受檢視模式限制：部分只需要杯測、不參與盤點的人員會用「僅檢視」身分登入
   const existing = existingId ? MY_CUPPING_SESSIONS.find(x=>x.id===existingId) : null;
   const defaultMid = { aroma:'8', flavor:'8', aftertaste:'8', acidity:'8', body:'8', balance:'8', overall:'8', uniformity:'10', clean_cup:'10', sweetness:'10' };
   const bean = CUPPING_BEANS.find(b=>b.id===beanId);
