@@ -224,7 +224,7 @@ let COUNT_LOGS = [];
 // 不影響其他既有功能。停用後如需完全復原資料庫，三張 cupping_* 表皆為新增式，
 // 直接 drop table 即可，不涉及任何既有表。
 const CUPPING_ENABLED = true;
-let CUPPING_BEANS = [], CUPPING_PARTICIPANTS = [], CUPPING_SESSIONS = [];
+let CUPPING_BEANS = [], CUPPING_PARTICIPANTS = [], CUPPING_SESSIONS = [], CUPPING_ROASTERY_STAFF = [];
 
 const DECISIONS = ['調回','變成出杯豆','報廢','其他'];
 
@@ -313,10 +313,11 @@ async function loadAll(){
       queries.push(
         sb.from('cupping_beans').select('*').order('created_at',{ascending:false}),
         sb.from('cupping_participants').select('*').order('store_id').order('name'),
-        sb.from('cupping_sessions').select('*')
+        sb.from('cupping_sessions').select('*'),
+        sb.from('cupping_roastery_staff').select('*').order('name')
       );
     }
-    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts},{data:signatures},{data:countLogs},cuppingBeansRes,cuppingParticipantsRes,cuppingSessionsRes] = await Promise.all(queries);
+    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts},{data:signatures},{data:countLogs},cuppingBeansRes,cuppingParticipantsRes,cuppingSessionsRes,cuppingRoasteryStaffRes] = await Promise.all(queries);
     STORES = stores || []; ITEMS_ALL = itemsAll || []; ITEMS = ITEMS_ALL.filter(i=>i.active);
     BATCHES = batches || []; RETURNS = returns || []; TRANSFERS = transfers || [];
     COUNT_LOGS = countLogs || [];
@@ -326,6 +327,7 @@ async function loadAll(){
       CUPPING_BEANS = (cuppingBeansRes && cuppingBeansRes.data) || [];
       CUPPING_PARTICIPANTS = (cuppingParticipantsRes && cuppingParticipantsRes.data) || [];
       CUPPING_SESSIONS = (cuppingSessionsRes && cuppingSessionsRes.data) || [];
+      CUPPING_ROASTERY_STAFF = (cuppingRoasteryStaffRes && cuppingRoasteryStaffRes.data) || [];
     }
     setSyncStatus('ok');
   }catch(e){ console.error(e); setSyncStatus('local'); }
@@ -352,7 +354,7 @@ document.addEventListener('focusout', ()=>{
 });
 function subscribeRealtime(){
   const tables = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','counting_sessions'];
-  if (CUPPING_ENABLED) tables.push('cupping_beans','cupping_participants','cupping_sessions');
+  if (CUPPING_ENABLED) tables.push('cupping_beans','cupping_participants','cupping_sessions','cupping_roastery_staff');
   const ch = sb.channel('factory-realtime');
   tables.forEach(t=>ch.on('postgres_changes',{event:'*',schema:'public',table:t}, scheduleReload));
   ch.subscribe(s=>{
@@ -1093,20 +1095,38 @@ async function saveCuppingBean(id){
 function renderCuppingParticipantsSection(){
   return `
     <div class="section">
-      <h2>杯測人員名單</h2>
-      <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">各店「需參與杯測」的人員白名單，完成率依此計算。</p>
+      <h2>烘豆場人員名單<button class="btn-sm" style="margin-left:8px;" onclick="openCuppingRoasteryStaffModal()">＋ 新增烘豆場人員</button></h2>
+      <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">烘豆場杯測評分時，杯測人員從這份名單選取，與門店端人員各自獨立。</p>
+      ${CUPPING_ROASTERY_STAFF.length ? `<table>
+        <thead><tr><th>姓名</th><th>狀態</th><th>備註</th><th></th></tr></thead>
+        <tbody>${CUPPING_ROASTERY_STAFF.map(p=>`
+          <tr>
+            <td data-label="姓名">${p.name}</td>
+            <td data-label="狀態">${p.active?'<span class="badge" style="background:var(--ok)">啟用</span>':'<span class="badge">停用</span>'}</td>
+            <td data-label="備註">${p.note||'—'}</td>
+            <td data-label=""><button class="btn-outline" onclick="toggleCuppingRoasteryStaffActive(${p.id}, ${!p.active})">${p.active?'停用':'啟用'}</button></td>
+          </tr>`).join('')}</tbody>
+      </table>` : `<div class="empty-msg">尚未建立烘豆場人員</div>`}
+    </div>
+    <div class="section">
+      <h2>門店杯測人員名單</h2>
+      <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">各店「需參與杯測」的人員白名單，完成率依此計算。「未完成課程」的人員仍可送出評分供追蹤，但不會列入比較分析的計算。</p>
       ${STORES.map(st=>{
         const rows = CUPPING_PARTICIPANTS.filter(p=>p.store_id===st.id);
         return `<div class="item-block">
           <div class="item-block-title">${st.name}<button class="btn-sm" style="margin-left:8px;" onclick="openCuppingParticipantModal('${st.id}')">＋ 新增人員</button></div>
           ${rows.length ? `<table>
-            <thead><tr><th>姓名</th><th>需參與杯測</th><th>備註</th><th></th></tr></thead>
+            <thead><tr><th>姓名</th><th>需參與杯測</th><th>課程狀態</th><th>備註</th><th></th></tr></thead>
             <tbody>${rows.map(p=>`
               <tr>
                 <td data-label="姓名">${p.name}</td>
                 <td data-label="需參與杯測">${p.active?'<span class="badge" style="background:var(--ok)">是</span>':'<span class="badge">否</span>'}</td>
+                <td data-label="課程狀態">${p.training_completed?'<span class="badge" style="background:var(--ok)">已完成課程</span>':'<span class="badge" style="background:var(--warn)">未完成課程</span>'}</td>
                 <td data-label="備註">${p.note||'—'}</td>
-                <td data-label=""><button class="btn-outline" onclick="toggleCuppingParticipant(${p.id}, ${!p.active})">${p.active?'停用':'啟用'}</button></td>
+                <td data-label="" style="white-space:nowrap;">
+                  <button class="btn-outline" onclick="toggleCuppingParticipant(${p.id}, ${!p.active})">${p.active?'停用':'啟用'}</button>
+                  <button class="btn-outline" onclick="toggleCuppingParticipantTraining(${p.id}, ${!p.training_completed})">${p.training_completed?'標記未完成課程':'標記已完成課程'}</button>
+                </td>
               </tr>`).join('')}</tbody>
           </table>` : `<div class="empty-msg">尚未建立人員</div>`}
         </div>`;
@@ -1117,6 +1137,7 @@ function openCuppingParticipantModal(storeId){
   openModal(`
     <h3>新增杯測人員（${storeName(storeId)}）</h3>
     <div class="field"><label>姓名</label><input type="text" id="cpName"></div>
+    <div class="field"><label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="cpTrained" checked> 已完成課程</label></div>
     <div class="field"><label>備註</label><input type="text" id="cpNote"></div>
     <div class="modal-actions">
       <button class="btn-outline" onclick="closeModal()">取消</button>
@@ -1126,15 +1147,44 @@ function openCuppingParticipantModal(storeId){
 async function saveCuppingParticipant(storeId){
   const name = document.getElementById('cpName').value.trim();
   if (!name){ toast('請輸入姓名'); return; }
+  const training_completed = document.getElementById('cpTrained').checked;
   const note = document.getElementById('cpNote').value.trim() || null;
   await guardSubmit('saveCuppingParticipant', async ()=>{
-    const { error } = await sb.from('cupping_participants').insert({ store_id:storeId, name, note });
+    const { error } = await sb.from('cupping_participants').insert({ store_id:storeId, name, note, training_completed });
     if (error){ toast('新增失敗：'+(error.code==='23505'?'此姓名已存在':error.message)); return; }
     closeModal(); toast('已新增'); loadAll();
   });
 }
 async function toggleCuppingParticipant(id, active){
   await sb.from('cupping_participants').update({ active }).eq('id', id);
+  toast(active?'已啟用':'已停用'); loadAll();
+}
+async function toggleCuppingParticipantTraining(id, training_completed){
+  await sb.from('cupping_participants').update({ training_completed }).eq('id', id);
+  toast(training_completed?'已標記為已完成課程':'已標記為未完成課程'); loadAll();
+}
+function openCuppingRoasteryStaffModal(){
+  openModal(`
+    <h3>新增烘豆場人員</h3>
+    <div class="field"><label>姓名</label><input type="text" id="crsName"></div>
+    <div class="field"><label>備註</label><input type="text" id="crsNote"></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="saveCuppingRoasteryStaff()">新增</button>
+    </div>`);
+}
+async function saveCuppingRoasteryStaff(){
+  const name = document.getElementById('crsName').value.trim();
+  if (!name){ toast('請輸入姓名'); return; }
+  const note = document.getElementById('crsNote').value.trim() || null;
+  await guardSubmit('saveCuppingRoasteryStaff', async ()=>{
+    const { error } = await sb.from('cupping_roastery_staff').insert({ name, note });
+    if (error){ toast('新增失敗：'+(error.code==='23505'?'此姓名已存在':error.message)); return; }
+    closeModal(); toast('已新增'); loadAll();
+  });
+}
+async function toggleCuppingRoasteryStaffActive(id, active){
+  await sb.from('cupping_roastery_staff').update({ active }).eq('id', id);
   toast(active?'已啟用':'已停用'); loadAll();
 }
 
@@ -1146,9 +1196,18 @@ function cuppingScoreFieldHtml(f, value){
 function openCuppingScoreModal(source, storeId, beanId, existingId){
   const existing = existingId ? CUPPING_SESSIONS.find(x=>x.id===existingId) : null;
   const defaultMid = { aroma:'8', flavor:'8', aftertaste:'8', acidity:'8', body:'8', balance:'8', overall:'8', uniformity:'10', clean_cup:'10', sweetness:'10' };
+  let nameFieldHtml;
+  if (source==='roastery'){
+    if (!CUPPING_ROASTERY_STAFF.some(p=>p.active)){ toast('請先到「杯測人員」建立烘豆場人員名單'); return; }
+    const names = CUPPING_ROASTERY_STAFF.filter(p=>p.active).map(p=>p.name);
+    if (existing && !names.includes(existing.participant_name)) names.unshift(existing.participant_name);
+    nameFieldHtml = `<div class="field"><label>杯測人員</label><select id="csName">${names.map(n=>`<option ${existing&&existing.participant_name===n?'selected':''}>${n}</option>`).join('')}</select></div>`;
+  } else {
+    nameFieldHtml = `<div class="field"><label>杯測人員</label><input type="text" id="csName" value="${existing?existing.participant_name:''}" placeholder="請輸入姓名"></div>`;
+  }
   openModal(`
     <h3>${source==='roastery'?'烘豆場杯測評分':'門店杯測評分'}｜${cuppingBeanName(beanId)}</h3>
-    <div class="field"><label>杯測人員</label><input type="text" id="csName" value="${existing?existing.participant_name:''}" placeholder="請輸入姓名"></div>
+    ${nameFieldHtml}
     ${CUPPING_SCORE_FIELDS.map(f=>cuppingScoreFieldHtml(f, existing?existing[f]:defaultMid[f])).join('')}
     <div class="field"><label>Taint 杯數</label><select id="cs_taint">${CUPPING_DEFECT_OPTS.map(o=>`<option ${(existing?String(existing.taint_cups):'0')===o?'selected':''}>${o}</option>`).join('')}</select></div>
     <div class="field"><label>Fault 杯數</label><select id="cs_fault">${CUPPING_DEFECT_OPTS.map(o=>`<option ${(existing?String(existing.fault_cups):'0')===o?'selected':''}>${o}</option>`).join('')}</select></div>
@@ -1242,6 +1301,10 @@ function renderCuppingRoasterySection(){
 
 // ── 比較分析 + 五邊形雷達圖 ──
 function cuppingSessionsForBean(beanId){ return CUPPING_SESSIONS.filter(s=>s.bean_id===beanId); }
+function isCuppingParticipantTrained(storeId, participantName){
+  const p = CUPPING_PARTICIPANTS.find(x=>x.store_id===storeId && x.name===participantName);
+  return p ? p.training_completed : true;
+}
 function renderCuppingCompareSection(container){
   if (!CUPPING_BEANS.length){ container.innerHTML = `<div class="section"><h2>比較分析</h2><div class="empty-msg">請先建立新豆</div></div>`; return; }
   if (!cuppingCompareBeanId) cuppingCompareBeanId = CUPPING_BEANS[0].id;
@@ -1249,7 +1312,8 @@ function renderCuppingCompareSection(container){
   const all = cuppingSessionsForBean(cuppingCompareBeanId);
   const roastery = all.filter(s=>s.source==='roastery');
   const byStore = {};
-  STORES.forEach(st=>{ byStore[st.id] = all.filter(s=>s.source==='store' && s.store_id===st.id); });
+  // 未完成課程的門店人員不列入比較分析（仍會保留在完成名單/Dashboard的完成度統計裡）
+  STORES.forEach(st=>{ byStore[st.id] = all.filter(s=>s.source==='store' && s.store_id===st.id && isCuppingParticipantTrained(st.id, s.participant_name)); });
 
   const scoreRows = CUPPING_SCORE_FIELDS.map(f=>{
     const rAvg = cuppingAvg(roastery, f);
@@ -1720,7 +1784,7 @@ document.addEventListener('click', e=>{
   if (!e.target.closest('#backupMenu') && e.target.tagName!=='BUTTON'){ menu.style.display='none'; }
 });
 // store_pins/factory_auth（登入密碼雜湊）刻意不納入備份範圍，避免明碼備份檔外流等同洩漏所有登入密碼
-const BACKUP_TABLES = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','batch_history','counting_sessions','cupping_beans','cupping_participants','cupping_sessions'];
+const BACKUP_TABLES = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','batch_history','counting_sessions','cupping_beans','cupping_participants','cupping_sessions','cupping_roastery_staff'];
 async function exportBackup(){
   toggleBackupMenu();
   const tables = {};

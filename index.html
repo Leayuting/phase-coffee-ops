@@ -1151,7 +1151,9 @@ function renderCuppingTab(){
           return `<tr>
             <td data-label="杯測人員">${p.name}</td>
             <td data-label="狀態">${s?'<span class="status-pill status-approved">✅ 已完成</span>':'<span class="status-pill status-pending">⏳ 未完成</span>'}</td>
-            <td data-label=""><button class="btn-sm" onclick="openCuppingScoreModal(${cuppingSelectedBeanId}, '${p.name.replace(/'/g,"\\'")}', ${s?s.id:'null'})">${s?'編輯':'填寫評分'}</button></td>
+            <td data-label="">${s
+              ? `<button class="btn-outline" onclick="viewCuppingSessionReadonly(${s.id})">檢視</button>`
+              : `<button class="btn-sm" onclick="openCuppingScoreModal(${cuppingSelectedBeanId}, '${p.name.replace(/'/g,"\\'")}', null)">填寫評分</button>`}</td>
           </tr>`;
         }).join('')}</tbody>
       </table>` : `<div class="empty-msg">工廠端尚未建立本店杯測人員名單</div>`}
@@ -1182,6 +1184,26 @@ function openCuppingScoreModal(beanId, participantName, existingId){
       <button class="btn-outline" onclick="closeModal()">取消</button>
       <button class="btn" onclick="saveCuppingScore(${beanId}, '${participantName.replace(/'/g,"\\'")}', ${existingId||'null'})">送出</button>
     </div>`);
+}
+function viewCuppingSessionReadonly(sessionId){
+  const s = MY_CUPPING_SESSIONS.find(x=>x.id===sessionId);
+  if (!s) return;
+  const bean = CUPPING_BEANS.find(b=>b.id===s.bean_id);
+  openModal(`
+    <h3>杯測評分（唯讀）｜${bean?bean.name:''}</h3>
+    <div class="field"><label>杯測人員</label><div>${s.participant_name}</div></div>
+    <div class="field"><label>杯測日期</label><div>${s.session_date}</div></div>
+    <table>
+      <thead><tr><th>項目</th><th>分數</th></tr></thead>
+      <tbody>${CUPPING_SCORE_FIELDS.map(f=>`<tr><td data-label="項目">${CUPPING_SCORE_LABELS[f]}</td><td data-label="分數">${s[f]}</td></tr>`).join('')}
+        <tr><td data-label="項目">Taint 杯數</td><td data-label="分數">${s.taint_cups}</td></tr>
+        <tr><td data-label="項目">Fault 杯數</td><td data-label="分數">${s.fault_cups}</td></tr>
+        <tr><td data-label="項目"><b>總分</b></td><td data-label="分數"><b>${cuppingTotal(s).toFixed(2)}</b></td></tr>
+      </tbody>
+    </table>
+    <div class="field" style="margin-top:10px;"><label>風味</label><div>${[s.flavor_note_1,s.flavor_note_2,s.flavor_note_3].filter(Boolean).join('、')||'—'}</div></div>
+    <div class="field"><label>感官備註</label><div style="white-space:pre-wrap;">${s.remark||'—'}</div></div>
+    <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">關閉</button></div>`);
 }
 async function saveCuppingScore(beanId, participantName, existingId){
   const payload = { bean_id:beanId, source:'store', store_id:STORE_ID, participant_name:participantName, session_date: todayStr() };
