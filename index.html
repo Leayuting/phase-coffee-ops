@@ -1115,8 +1115,17 @@ function cuppingTotal(s){
   return sum - (Number(s.taint_cups||0)*2 + Number(s.fault_cups||0)*4);
 }
 function isCuppingOverdue(b){
-  if (!b.store_deadline || b.bean_status==='已完成') return false;
-  return b.store_deadline < todayStr();
+  return !!(b.store_deadline && b.store_deadline < todayStr());
+}
+function cuppingDeadlineMD(dateStr){
+  if (!dateStr) return null;
+  const [, m, d] = dateStr.split('-');
+  return `${Number(m)}/${Number(d)}`;
+}
+function cuppingBeanLabel(b){
+  return b.store_deadline
+    ? `${b.name}｜杯測截止日期：${cuppingDeadlineMD(b.store_deadline)}`
+    : b.name;
 }
 function cuppingMyCompletion(beanId){
   const done = MY_CUPPING_PARTICIPANTS.filter(p=>MY_CUPPING_SESSIONS.some(s=>s.bean_id===beanId && s.participant_name===p.name)).length;
@@ -1155,9 +1164,9 @@ function renderCuppingMultiBeanForm(name){
       <div style="font-weight:700;font-size:13.5px;margin-bottom:8px;">待評分新豆（可同時勾選多支，一次送出）</div>
       ${pending.length ? pending.map(b=>`
         <div class="item-group">
-          <label style="display:flex;align-items:center;gap:8px;font-weight:700;cursor:pointer;">
+          <label style="display:flex;align-items:center;gap:8px;font-weight:700;cursor:pointer;${isCuppingOverdue(b)?'color:var(--danger);':''}">
             <input type="checkbox" class="cupping-bean-check" value="${b.id}" onchange="toggleCuppingBeanScoreBlock(${b.id})">
-            ${b.bean_code}｜${b.name}${b.store_deadline?`<span style="font-weight:400;color:${isCuppingOverdue(b)?'var(--danger)':'var(--gray-50)'};font-size:12px;">・截止 ${b.store_deadline}${isCuppingOverdue(b)?'（已逾期）':''}</span>`:''}
+            ${cuppingBeanLabel(b)}
           </label>
           <div id="cupping-score-block-${b.id}" style="display:none;margin-top:8px;">
             ${cuppingInlineScoreFieldsHtml(b.id)}
@@ -1168,7 +1177,7 @@ function renderCuppingMultiBeanForm(name){
       <div style="font-weight:700;font-size:13.5px;margin:16px 0 8px;">已完成</div>
       ${done.length ? done.map(b=>{
         const s = MY_CUPPING_SESSIONS.find(x=>x.bean_id===b.id && x.participant_name===name);
-        return `<div class="addon-item"><div>${b.bean_code}｜${b.name}</div><button class="btn-outline" onclick="viewCuppingSessionReadonly(${s.id})">檢視</button></div>`;
+        return `<div class="addon-item"><div>${cuppingBeanLabel(b)}</div><button class="btn-outline" onclick="viewCuppingSessionReadonly(${s.id})">檢視</button></div>`;
       }).join('') : `<div class="empty-msg">尚無已完成的新豆</div>`}
     </div>`;
 }
