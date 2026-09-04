@@ -820,8 +820,9 @@ function updateAllocTotal(batchId){
   const sum = sumAllocQty(batchId);
   const el = document.getElementById('alloc-total-'+batchId);
   if (!el) return;
-  const ok = sum === target;
-  el.textContent = `已分配 ${sum} / 總量 ${target}`;
+  const ok = sum > 0 && sum <= target;
+  const remain = target - sum;
+  el.textContent = `已分配 ${sum} / 批次總量 ${target}` + (ok && remain>0 ? `（其餘 ${remain} 包維持在門店正常庫存）` : '');
   el.style.color = ok ? 'var(--ok)' : 'var(--danger)';
   el.style.fontWeight = '600';
 }
@@ -837,8 +838,8 @@ async function initiateRecall(batchId){
     if (qty>0) allocations.push({ decision, qty, note });
   });
   const total = allocations.reduce((s,a)=>s+a.qty,0);
-  if (!allocations.length || total !== b.quantity){
-    toast(`分配總數需等於批次總量 ${b.quantity}（目前 ${total}）`); return;
+  if (!allocations.length || total<=0 || total > b.quantity){
+    toast(`分配總數需大於 0 且不能超過批次總量 ${b.quantity}（目前 ${total}）`); return;
   }
   const { error } = await sb.rpc('initiate_recall', { p_batch_id: batchId, p_allocations: allocations });
   if (error){ toast('通知失敗：'+error.message); return; }
