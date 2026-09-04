@@ -645,7 +645,7 @@ function openRecallModal(){
         <div>${itemName(r.item_id)} × ${r.quantity}（烘焙 ${r.roast_date}）<br>
           <span style="color:var(--gray-50)">工廠處置：${r.factory_decision||'—'}${r.decision_note ? '（'+r.decision_note+'）' : ''}</span></div>
         ${STORE_ROLE==='viewer' ? '' : `<div style="display:flex;gap:6px;">
-          <button class="btn-sm" onclick="promptCompleteReturn(${r.id}, ${r.batch_id}, true)">標記完成</button>
+          <button class="btn-sm" onclick="promptCompleteReturn(${r.id}, ${r.batch_id}, true)">確認調回</button>
           <button class="btn-outline" onclick="promptRejectReturn(${r.id}, true)">拒絕</button>
         </div>`}
       </div>`).join('')}</div>
@@ -843,11 +843,12 @@ function renderReturnList(channel){
   const cls = { pending:'status-pending', decided:'status-decided', rejected:'status-rejected', cancelled:'status-decided' };
   return rows.map(r=>`
     <div class="addon-item">
-      <div>${itemName(r.item_id)} × ${r.quantity}（烘焙 ${r.roast_date}）<br>
+      <div>${itemName(r.item_id)} × ${r.quantity}${r.actual_quantity!=null && r.actual_quantity!==r.quantity ? `（實際調回 ${r.actual_quantity}）` : ''}（烘焙 ${r.roast_date}）<br>
         <span style="color:var(--gray-50)">工廠處置：${r.factory_decision||'—'}${r.decision_note ? '（'+r.decision_note+'）' : ''}${r.completed_by ? '　由 '+r.completed_by+(r.status==='rejected'?' 拒絕':' 完成') : ''}</span>
+        ${r.shortage_reason ? `<br><span style="color:var(--danger)">差異原因：${r.shortage_reason}</span>` : ''}
         ${r.reject_reason ? `<br><span style="color:var(--danger)">拒絕原因：${r.reject_reason}</span>` : ''}</div>
       ${r.status==='pending'
-        ? (STORE_ROLE==='viewer' ? `<span class="status-pill status-pending">${label.pending}</span>` : `<div style="display:flex;gap:6px;"><button class="btn-sm" onclick="promptCompleteReturn(${r.id}, ${r.batch_id}, false)">標記完成</button><button class="btn-outline" onclick="promptRejectReturn(${r.id}, false)">拒絕</button></div>`)
+        ? (STORE_ROLE==='viewer' ? `<span class="status-pill status-pending">${label.pending}</span>` : `<div style="display:flex;gap:6px;"><button class="btn-sm" onclick="promptCompleteReturn(${r.id}, ${r.batch_id}, false)">確認調回</button><button class="btn-outline" onclick="promptRejectReturn(${r.id}, false)">拒絕</button></div>`)
         : `<span class="status-pill ${cls[r.status]}">${label[r.status]}</span>`}
     </div>`).join('');
 }
@@ -855,20 +856,42 @@ function promptCompleteReturn(returnId, batchId, backToList){
   const r = RETURNS.find(x=>x.id===returnId);
   if (!r) return;
   openModal(`
-    <h3>標記完成</h3>
-    <div class="field"><label>項目</label><div>${itemName(r.item_id)} × ${r.quantity}（烘焙 ${r.roast_date}）</div></div>
+    <h3>確認調回數量</h3>
+    <div class="field"><label>項目</label><div>${itemName(r.item_id)} × 原申請 ${r.quantity}（烘焙 ${r.roast_date}）</div></div>
+    <div class="field"><label>實際調回數量（門市目前庫存不足時可往下調整，最多 ${r.quantity}）</label>
+      <input type="number" id="actualQty" min="0" max="${r.quantity}" value="${r.quantity}" oninput="updateActualQtyHint(${r.quantity})"></div>
+    <div id="actualQtyHint" style="font-size:12px;color:var(--danger);margin:-6px 0 10px;min-height:16px;"></div>
+    <div class="field"><label>差異原因（實際調回數量為 0 時必填）</label><textarea id="shortageReason" placeholder="例如：審核前已售出、盤點差異…"></textarea></div>
     <div class="field"><label>經手人姓名（以示負責）</label><input type="text" id="completeByName" placeholder="請輸入姓名"></div>
     <div class="modal-actions">
       <button class="btn-outline" onclick="${backToList ? 'openRecallModal()' : 'closeModal()'}">取消</button>
-      <button class="btn" onclick="confirmCompleteReturn(${returnId}, ${batchId}, ${backToList})">確認完成</button>
+      <button class="btn" onclick="confirmCompleteReturn(${returnId}, ${batchId}, ${backToList})">確認</button>
     </div>`);
 }
+function updateActualQtyHint(requested){
+  const input = document.getElementById('actualQty');
+  if (!input) return;
+  let qty = Number(input.value);
+  if (isNaN(qty) || qty<0) qty = 0;
+  if (qty>requested) qty = requested;
+  input.value = qty;
+  const hint = document.getElementById('actualQtyHint');
+  const diff = requested - qty;
+  hint.textContent = diff>0 ? `⚠ 原申請 ${requested}，短少 ${diff}` : '';
+}
 async function confirmCompleteReturn(returnId, batchId, backToList){
+  const r = RETURNS.find(x=>x.id===returnId);
+  const requested = r ? r.quantity : 0;
+  let qty = Number(document.getElementById('actualQty').value);
+  if (isNaN(qty) || qty<0) qty = 0;
+  if (qty>requested) qty = requested;
+  const reason = document.getElementById('shortageReason').value.trim();
   const name = document.getElementById('completeByName').value.trim();
   if (!name){ toast('請輸入姓名'); return; }
-  const { error } = await sb.rpc('complete_return', { p_return_id:returnId, p_batch_id:batchId, p_name:name });
+  if (qty===0 && !reason){ toast('實際調回數量為 0 時必須填寫原因'); return; }
+  const { error } = await sb.rpc('complete_return', { p_return_id:returnId, p_batch_id:batchId, p_actual_qty:qty, p_name:name, p_reason: reason||null });
   if (error){ toast('更新失敗：'+error.message); return; }
-  toast('已標記完成'); await loadAll();
+  toast(qty < requested ? `已確認調回 ${qty}（原申請 ${requested}）` : '已完成調回'); await loadAll();
   if (backToList && pendingReturns().length) openRecallModal(); else closeModal();
 }
 function promptRejectReturn(returnId, backToList){

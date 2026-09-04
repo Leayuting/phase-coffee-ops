@@ -726,10 +726,10 @@ function renderReturnHistory(channel){
         <tr>
           <td data-label="門店">${storeName(r.store_id)}</td>
           <td data-label="品項">${itemName(r.item_id)}</td>
-          <td data-label="數量">${r.quantity}</td>
+          <td data-label="數量">${r.quantity}${r.actual_quantity!=null && r.actual_quantity!==r.quantity ? `<div style="color:var(--danger);font-size:11px;">實際 ${r.actual_quantity}</div>` : ''}</td>
           <td data-label="烘焙日期">${r.roast_date}</td>
           <td data-label="工廠處置">${r.factory_decision||'—'}${r.decision_note?'（'+r.decision_note+'）':''}</td>
-          <td data-label="狀態">${statusPill[r.status]||r.status}${r.reject_reason?`<div style="color:var(--gray-50);font-size:11px;margin-top:2px;">拒絕原因：${r.reject_reason}</div>`:''}</td>
+          <td data-label="狀態">${statusPill[r.status]||r.status}${r.reject_reason?`<div style="color:var(--gray-50);font-size:11px;margin-top:2px;">拒絕原因：${r.reject_reason}</div>`:''}${r.shortage_reason?`<div style="color:var(--gray-50);font-size:11px;margin-top:2px;">差異原因：${r.shortage_reason}</div>`:''}</td>
           <td data-label="處理人">${r.completed_by||'—'}</td>
           <td data-label="發起時間">${fmtDT(new Date(r.submitted_at).getTime())}</td>
         </tr>`).join('')}
