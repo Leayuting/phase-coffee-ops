@@ -219,6 +219,7 @@ function todayStr(){ const p = taipeiParts(Date.now()); return dateStr(p.y,p.m,p
 let STORES = [], ITEMS_ALL = [], ITEMS = [];
 let FILTER_STOCK_ALL = [], FILTER_ORDERS = [];
 let FILTER_EVENTS = [], FILTER_EVENT_ITEMS = [];
+let FACTORY_PINS = [];
 let BATCHES = [], RETURNS = [], TRANSFERS = [];
 let ANNOUNCEMENTS = [], RECEIPTS = [];
 let SIGNATURES = [];
@@ -325,9 +326,10 @@ async function loadAll(){
       sb.from('filter_stock').select('*').order('item_id'),
       sb.from('filter_orders').select('*').order('requested_at',{ascending:false}),
       sb.from('filter_events').select('*').order('created_at',{ascending:false}),
-      sb.from('filter_event_items').select('*')
+      sb.from('filter_event_items').select('*'),
+      sb.rpc('list_factory_pins')
     );
-    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts},{data:signatures},{data:countLogs},cuppingBeansRes,cuppingParticipantsRes,cuppingSessionsRes,cuppingRoasteryStaffRes,filterStockRes,filterOrdersRes,filterEventsRes,filterEventItemsRes] = await Promise.all(queries);
+    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts},{data:signatures},{data:countLogs},cuppingBeansRes,cuppingParticipantsRes,cuppingSessionsRes,cuppingRoasteryStaffRes,filterStockRes,filterOrdersRes,filterEventsRes,filterEventItemsRes,factoryPinsRes] = await Promise.all(queries);
     STORES = stores || []; ITEMS_ALL = itemsAll || []; ITEMS = ITEMS_ALL.filter(i=>i.active);
     BATCHES = batches || []; RETURNS = returns || []; TRANSFERS = transfers || [];
     COUNT_LOGS = countLogs || [];
@@ -343,6 +345,7 @@ async function loadAll(){
     FILTER_ORDERS = (filterOrdersRes && filterOrdersRes.data) || [];
     FILTER_EVENTS = (filterEventsRes && filterEventsRes.data) || [];
     FILTER_EVENT_ITEMS = (filterEventItemsRes && filterEventItemsRes.data) || [];
+    FACTORY_PINS = (factoryPinsRes && factoryPinsRes.data) || [];
     setSyncStatus('ok');
   }catch(e){ console.error(e); setSyncStatus('local'); }
   render();
@@ -2017,12 +2020,20 @@ function renderSettingsTab(){
     </div>
     <div class="section">
       <h2>工廠端登入 PIN</h2>
-      <p style="color:var(--gray-50);font-size:12.5px;margin-bottom:10px;">工廠端（本頁）自己的 8 位數 PIN，與門店 PIN 不同。</p>
-      <div class="addon-row">
-        <div><b>工廠端</b></div>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <input type="text" inputmode="numeric" maxlength="8" placeholder="輸入新的 8 位數 PIN" id="newpin-factory" class="mini-input" style="width:130px;">
-          <button class="btn-sm" onclick="resetFactoryPin()">重設</button>
+      <p style="color:var(--gray-50);font-size:12.5px;margin-bottom:10px;">工廠端可以有多組 8 位數 PIN 同時有效，符合任一組即可登入；停用某一組不影響其他組。</p>
+      ${FACTORY_PINS.map(p=>`
+        <div class="addon-row">
+          <div><b>${p.label || '（未命名）'}</b><span style="color:var(--gray-50);font-size:11.5px;margin-left:6px;">建立於 ${fmtDT(new Date(p.created_at).getTime())}</span></div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            ${p.active ? '<span class="badge" style="background:var(--ok)">啟用中</span>' : '<span class="badge">已停用</span>'}
+            <button class="btn-outline" onclick="toggleFactoryPinActive(${p.id}, ${!p.active})">${p.active?'停用':'啟用'}</button>
+          </div>
+        </div>`).join('')}
+      <div class="addon-row" style="margin-top:8px;">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <input type="text" placeholder="標籤（選填，如用途/人員）" id="newpin-factory-label" class="mini-input" style="width:150px;">
+          <input type="text" inputmode="numeric" maxlength="8" placeholder="新增 8 位數 PIN" id="newpin-factory" class="mini-input" style="width:130px;">
+          <button class="btn-sm" onclick="addFactoryPin()">新增</button>
         </div>
       </div>
     </div>`;
@@ -2037,15 +2048,24 @@ async function resetStorePin(storeId){
   if (error){ toast('重設失敗：'+error.message); return; }
   input.value=''; toast('已重設 PIN');
 }
-async function resetFactoryPin(){
-  const input = document.getElementById('newpin-factory');
-  const pin = input.value.trim();
+async function addFactoryPin(){
+  const pinInput = document.getElementById('newpin-factory');
+  const labelInput = document.getElementById('newpin-factory-label');
+  const pin = pinInput.value.trim();
+  const label = labelInput.value.trim() || null;
   if (!/^\d{8}$/.test(pin)){ toast('PIN 需為 8 位數字'); return; }
-  if (!confirm('確定要重設工廠端的登入 PIN 嗎？重設後原本的 PIN 會立即失效。')) return;
-  const pin_hash = await sha256Hex(pin);
-  const { error } = await sb.rpc('reset_factory_pin', { p_new_hash: pin_hash });
-  if (error){ toast('重設失敗：'+error.message); return; }
-  input.value=''; toast('已重設工廠端 PIN，下次登入請用新密碼');
+  await guardSubmit('addFactoryPin', async ()=>{
+    const pin_hash = await sha256Hex(pin);
+    const { error } = await sb.rpc('add_factory_pin', { p_pin_hash: pin_hash, p_label: label });
+    if (error){ toast('新增失敗：'+error.message); return; }
+    pinInput.value=''; labelInput.value=''; toast('已新增一組工廠端 PIN'); loadAll();
+  });
+}
+async function toggleFactoryPinActive(id, active){
+  if (!active && !confirm('確定要停用這組 PIN 嗎？停用後這組密碼會立即失效。')) return;
+  const { error } = await sb.rpc('set_factory_pin_active', { p_id: id, p_active: active });
+  if (error){ toast('操作失敗：'+error.message); return; }
+  toast(active?'已啟用':'已停用'); loadAll();
 }
 
 // ══════════ 備份還原 + PWA ══════════
