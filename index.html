@@ -156,6 +156,7 @@ tr.batch-row.pending{opacity:.6;}
   <div id="recallBanner" class="recall-banner" style="display:none;" onclick="openRecallModal()"></div>
   <div id="announcementBanner" class="recall-banner" style="display:none;background:#3D2A1C;" onclick="openAnnouncementModal()"></div>
   <div id="transferInBanner" class="recall-banner" style="display:none;background:#4a7c6f;" onclick="openTransferInModal()"></div>
+  <div id="filterOrderBanner" class="recall-banner" style="display:none;background:#009ba8;" onclick="switchTab('filter')"></div>
   <div id="counterBar" class="counter-bar"></div>
   <div class="tabs">
     <button class="tab-btn active" data-tab="retail" onclick="switchTab('retail')">架上販售豆</button>
@@ -235,6 +236,7 @@ const TYPE_LABEL = { retail:'架上販售豆', brew:'門市沖煮豆', filter:'�
 // 三張 cupping_* 表皆為新增式，如需完全復原只要 drop table，不涉及任何既有表。
 const CUPPING_ENABLED = true;
 let CUPPING_BEANS = [], MY_CUPPING_PARTICIPANTS = [], MY_CUPPING_SESSIONS = [];
+let FILTER_STOCK = [], MY_FILTER_ORDERS = [];
 const CAT_META = {
   G: { zh:'蜜處理・日曬', color:'#b0b0b0', text:'var(--black)' },
   Y: { zh:'水洗',         color:'#e8c43a', text:'var(--black)' },
@@ -524,7 +526,11 @@ async function loadAll(){
         sb.from('cupping_sessions').select('*').eq('source','store').eq('store_id', STORE_ID)
       );
     }
-    const [{data:items}, {data:batches}, {data:returns}, {data:transfers}, {data:receipts}, {data:incoming}, cuppingBeansRes, cuppingParticipantsRes, cuppingSessionsRes] = await Promise.all(queries);
+    queries.push(
+      sb.from('filter_stock').select('*').eq('orderable', true).order('item_id'),
+      sb.from('filter_orders').select('*').eq('store_id', STORE_ID).order('requested_at', {ascending:false})
+    );
+    const [{data:items}, {data:batches}, {data:returns}, {data:transfers}, {data:receipts}, {data:incoming}, cuppingBeansRes, cuppingParticipantsRes, cuppingSessionsRes, filterStockRes, filterOrdersRes] = await Promise.all(queries);
     ITEMS = items || []; BATCHES = batches || []; RETURNS = returns || []; MY_TRANSFERS = transfers || [];
     MY_RECEIPTS = (receipts || []).sort((a,b)=> new Date(b.announcement.created_at) - new Date(a.announcement.created_at));
     INCOMING_TRANSFERS = incoming || [];
@@ -533,6 +539,8 @@ async function loadAll(){
       MY_CUPPING_PARTICIPANTS = (cuppingParticipantsRes && cuppingParticipantsRes.data) || [];
       MY_CUPPING_SESSIONS = (cuppingSessionsRes && cuppingSessionsRes.data) || [];
     }
+    FILTER_STOCK = (filterStockRes && filterStockRes.data) || [];
+    MY_FILTER_ORDERS = (filterOrdersRes && filterOrdersRes.data) || [];
     setSyncStatus('ok');
   }catch(e){ console.error(e); setSyncStatus('local'); }
   render();
@@ -562,6 +570,7 @@ document.addEventListener('focusout', ()=>{
 function subscribeRealtime(){
   const tables = ['items','batches','returns','transfer_requests','announcements','announcement_receipts'];
   if (CUPPING_ENABLED) tables.push('cupping_beans','cupping_participants','cupping_sessions');
+  tables.push('filter_stock','filter_orders');
   const ch = sb.channel('store-realtime-'+STORE_ID);
   tables.forEach(t=>{
     ch.on('postgres_changes', { event:'*', schema:'public', table:t }, scheduleReload);
@@ -599,6 +608,7 @@ function render(){
   renderAnnouncementMarquee();
   renderLastCountedFooter();
   if (CUPPING_ENABLED) renderCuppingTab();
+  checkFilterOrderNotifications();
 }
 function renderLastCountedFooter(){
   const el = document.getElementById('lastCountedFooter');
@@ -743,6 +753,7 @@ function renderTab(type){
       <h2>工廠回收指示</h2>
       <div id="${type}-returnList">${renderReturnList(type)}</div>
     </div>
+    ${type==='filter' ? renderFilterOrderSection() : ''}
   `;
 }
 
@@ -1262,6 +1273,59 @@ function viewCuppingSessionReadonly(sessionId){
     <div class="field"><label>感官備註</label><div style="white-space:pre-wrap;">${s.remark||'—'}</div></div>
     <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">關閉</button></div>`);
 }
+// ══════════ 濾掛：向工廠訂購（總庫存統一由工廠端管理） ══════════
+function renderFilterOrderSection(){
+  return `
+    <div class="section">
+      <h2>向工廠訂購濾掛</h2>
+      ${FILTER_STOCK.length ? `
+        <div class="field"><label>品項</label><select id="foItem">${FILTER_STOCK.map(f=>`<option value="${f.item_id}">${itemName(f.item_id)}（工廠現有 ${f.quantity}）</option>`).join('')}</select></div>
+        <div class="field"><label>訂購數量</label><input type="number" id="foQty" min="1" value="1"></div>
+        ${STORE_ROLE!=='viewer' ? `<button class="btn" onclick="submitFilterOrder()">送出訂購</button>` : ''}
+      ` : `<div class="empty-msg">工廠目前沒有開放可下單的濾掛品項</div>`}
+    </div>
+    <div class="section">
+      <h2>我的濾掛訂購紀錄</h2>
+      ${renderMyFilterOrders()}
+    </div>`;
+}
+function renderMyFilterOrders(){
+  if (!MY_FILTER_ORDERS.length) return `<div class="empty-msg">尚無訂購紀錄</div>`;
+  const label = { pending:'待工廠出貨', fulfilled:'已出貨', rejected:'已拒絕' };
+  const cls = { pending:'status-pending', fulfilled:'status-approved', rejected:'status-rejected' };
+  return MY_FILTER_ORDERS.map(o=>`
+    <div class="addon-item">
+      <div>${itemName(o.item_id)} × ${o.quantity}${o.actual_quantity!=null && o.actual_quantity!==o.quantity ? `（實際出貨 ${o.actual_quantity}）` : ''}<br>
+        <span style="color:var(--gray-50)">${o.decision_note||''}</span></div>
+      <span class="status-pill ${cls[o.status]}">${label[o.status]}</span>
+    </div>`).join('');
+}
+function submitFilterOrder(){
+  ensureCounterName(doSubmitFilterOrder);
+}
+async function doSubmitFilterOrder(){
+  const item_id = Number(document.getElementById('foItem').value);
+  const quantity = Number(document.getElementById('foQty').value||0);
+  if (quantity<=0){ toast('請輸入訂購數量'); return; }
+  const stock = FILTER_STOCK.find(f=>f.item_id===item_id);
+  if (stock && quantity>stock.quantity){ toast(`數量不能超過工廠現有的 ${stock.quantity}`); return; }
+  await guardSubmit('submitFilterOrder', async ()=>{
+    const { error } = await sb.from('filter_orders').insert({ store_id:STORE_ID, item_id, quantity, requested_by:counterName, status:'pending' });
+    if (error){ toast('送出失敗：'+error.message); return; }
+    toast('已送出訂購申請'); loadAll();
+  });
+}
+function checkFilterOrderNotifications(){
+  const banner = document.getElementById('filterOrderBanner');
+  if (!banner) return;
+  if (FILTER_STOCK.length){
+    banner.style.display = 'block';
+    banner.textContent = `📦 工廠開放 ${FILTER_STOCK.length} 項濾掛可下單，點此前往訂購`;
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
 // ══════════ MODALS ══════════
 function openModal(html){
   document.getElementById('modalBody').innerHTML = html;

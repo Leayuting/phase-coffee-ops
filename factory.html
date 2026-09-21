@@ -135,6 +135,7 @@ tr[data-item-id].dragging{opacity:.4;background:var(--gray-08);}
   <button class="tab-btn" data-tab="alert" onclick="switchTab('alert')">販售豆總覽</button>
   <button class="tab-btn" data-tab="brewboard" onclick="switchTab('brewboard')">沖煮豆總覽</button>
   <button class="tab-btn" data-tab="filterboard" onclick="switchTab('filterboard')">濾掛總覽</button>
+  <button class="tab-btn" data-tab="filterstock" onclick="switchTab('filterstock')">濾掛庫存管理</button>
   <button class="tab-btn" data-tab="transfers" onclick="switchTab('transfers')">調貨申請</button>
   <button class="tab-btn" data-tab="announcements" onclick="switchTab('announcements')">系統公告</button>
   <button class="tab-btn" data-tab="cupping" onclick="switchTab('cupping')" id="cuppingTabBtn" style="display:none;">杯測</button>
@@ -146,6 +147,7 @@ tr[data-item-id].dragging{opacity:.4;background:var(--gray-08);}
   <section id="tab-alert" class="tab-panel"></section>
   <section id="tab-brewboard" class="tab-panel"></section>
   <section id="tab-filterboard" class="tab-panel"></section>
+  <section id="tab-filterstock" class="tab-panel"></section>
   <section id="tab-transfers" class="tab-panel"></section>
   <section id="tab-announcements" class="tab-panel"></section>
   <section id="tab-cupping" class="tab-panel"></section>
@@ -215,6 +217,7 @@ function todayStr(){ const p = taipeiParts(Date.now()); return dateStr(p.y,p.m,p
 
 // ══════════ STATE ══════════
 let STORES = [], ITEMS_ALL = [], ITEMS = [];
+let FILTER_STOCK_ALL = [], FILTER_ORDERS = [];
 let BATCHES = [], RETURNS = [], TRANSFERS = [];
 let ANNOUNCEMENTS = [], RECEIPTS = [];
 let SIGNATURES = [];
@@ -317,7 +320,11 @@ async function loadAll(){
         sb.from('cupping_roastery_staff').select('*').order('name')
       );
     }
-    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts},{data:signatures},{data:countLogs},cuppingBeansRes,cuppingParticipantsRes,cuppingSessionsRes,cuppingRoasteryStaffRes] = await Promise.all(queries);
+    queries.push(
+      sb.from('filter_stock').select('*').order('item_id'),
+      sb.from('filter_orders').select('*').order('requested_at',{ascending:false})
+    );
+    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts},{data:signatures},{data:countLogs},cuppingBeansRes,cuppingParticipantsRes,cuppingSessionsRes,cuppingRoasteryStaffRes,filterStockRes,filterOrdersRes] = await Promise.all(queries);
     STORES = stores || []; ITEMS_ALL = itemsAll || []; ITEMS = ITEMS_ALL.filter(i=>i.active);
     BATCHES = batches || []; RETURNS = returns || []; TRANSFERS = transfers || [];
     COUNT_LOGS = countLogs || [];
@@ -329,6 +336,8 @@ async function loadAll(){
       CUPPING_SESSIONS = (cuppingSessionsRes && cuppingSessionsRes.data) || [];
       CUPPING_ROASTERY_STAFF = (cuppingRoasteryStaffRes && cuppingRoasteryStaffRes.data) || [];
     }
+    FILTER_STOCK_ALL = (filterStockRes && filterStockRes.data) || [];
+    FILTER_ORDERS = (filterOrdersRes && filterOrdersRes.data) || [];
     setSyncStatus('ok');
   }catch(e){ console.error(e); setSyncStatus('local'); }
   render();
@@ -355,6 +364,7 @@ document.addEventListener('focusout', ()=>{
 function subscribeRealtime(){
   const tables = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','counting_sessions'];
   if (CUPPING_ENABLED) tables.push('cupping_beans','cupping_participants','cupping_sessions','cupping_roastery_staff');
+  tables.push('filter_stock','filter_orders');
   const ch = sb.channel('factory-realtime');
   tables.forEach(t=>ch.on('postgres_changes',{event:'*',schema:'public',table:t}, scheduleReload));
   ch.subscribe(s=>{
@@ -407,6 +417,7 @@ function render(){
   renderAlertTab();
   renderSimpleBoardTab('brew', 'brewboard', '跨店沖煮豆庫存看板');
   renderSimpleBoardTab('filter', 'filterboard', '跨店濾掛庫存看板');
+  renderFilterStockTab();
   renderTransfersTab();
   renderAnnouncementsTab();
   if (CUPPING_ENABLED) renderCuppingTab();
@@ -844,6 +855,103 @@ async function initiateRecall(batchId){
   const { error } = await sb.rpc('initiate_recall', { p_batch_id: batchId, p_allocations: allocations });
   if (error){ toast('通知失敗：'+error.message); return; }
   toast('已通知門店'); loadAll();
+}
+
+// ══════════ 濾掛庫存管理（總庫存統一由工廠端管理，獨立於原本按門店分開的濾掛總覽） ══════════
+function renderFilterStockTab(){
+  const el = document.getElementById('tab-filterstock');
+  if (!el) return;
+  const pendingOrders = FILTER_ORDERS.filter(o=>o.status==='pending');
+  const decidedOrders = FILTER_ORDERS.filter(o=>o.status!=='pending');
+  el.innerHTML = `
+    <div class="section">
+      <h2>濾掛進貨登記</h2>
+      <div class="field"><label>品項</label><select id="frItem">${ITEMS.map(i=>`<option value="${i.id}">${i.name}</option>`).join('')}</select></div>
+      <div class="field"><label>進貨數量</label><input type="number" id="frQty" min="1" value="1"></div>
+      <div class="field"><label>備註</label><input type="text" id="frNote"></div>
+      <div class="field"><label>經手人姓名</label><input type="text" id="frName" placeholder="請輸入姓名"></div>
+      <button class="btn" onclick="submitFilterReceipt()">登記進貨</button>
+    </div>
+    <div class="section">
+      <h2>濾掛總庫存</h2>
+      ${FILTER_STOCK_ALL.length ? `<table>
+        <thead><tr><th>品項</th><th>目前庫存</th><th>可下單</th><th></th></tr></thead>
+        <tbody>${FILTER_STOCK_ALL.map(f=>`
+          <tr>
+            <td data-label="品項">${itemName(f.item_id)}</td>
+            <td data-label="目前庫存">${f.quantity}</td>
+            <td data-label="可下單">${f.orderable?'<span class="badge" style="background:var(--ok)">開放中</span>':'<span class="badge">未開放</span>'}</td>
+            <td data-label=""><button class="btn-outline" onclick="toggleFilterOrderable(${f.item_id}, ${!f.orderable})">${f.orderable?'關閉下單':'開放下單'}</button></td>
+          </tr>`).join('')}</tbody>
+      </table>` : `<div class="empty-msg">尚無進貨紀錄，請先登記進貨</div>`}
+    </div>
+    <div class="section">
+      <h2>待處理訂購申請（${pendingOrders.length}）</h2>
+      ${pendingOrders.length ? pendingOrders.map(o=>`
+        <div class="addon-row">
+          <div><b>${storeName(o.store_id)}</b> 訂購 ${itemName(o.item_id)} × ${o.quantity}<br>
+            <span style="color:var(--gray-50)">申請人：${o.requested_by||'—'}・${fmtDT(new Date(o.requested_at).getTime())}</span></div>
+          <button class="btn-sm" onclick="openFulfillFilterOrderModal(${o.id})">確認出貨</button>
+        </div>`).join('') : `<div class="empty-msg">目前沒有待處理的訂購申請</div>`}
+    </div>
+    <div class="section">
+      <h2>訂購歷史</h2>
+      ${decidedOrders.length ? `<table>
+        <thead><tr><th>門店</th><th>品項</th><th>申請數量</th><th>實際出貨</th><th>狀態</th><th>備註</th></tr></thead>
+        <tbody>${decidedOrders.map(o=>`
+          <tr>
+            <td data-label="門店">${storeName(o.store_id)}</td>
+            <td data-label="品項">${itemName(o.item_id)}</td>
+            <td data-label="申請數量">${o.quantity}</td>
+            <td data-label="實際出貨">${o.actual_quantity!=null?o.actual_quantity:'—'}</td>
+            <td data-label="狀態">${o.status==='fulfilled'?'<span class="status-pill status-approved">已出貨</span>':'<span class="status-pill status-rejected">已拒絕</span>'}</td>
+            <td data-label="備註">${o.decision_note||'—'}</td>
+          </tr>`).join('')}</tbody>
+      </table>` : `<div class="empty-msg">尚無紀錄</div>`}
+    </div>`;
+}
+async function submitFilterReceipt(){
+  const item_id = Number(document.getElementById('frItem').value);
+  const quantity = Number(document.getElementById('frQty').value||0);
+  const note = document.getElementById('frNote').value.trim() || null;
+  const name = document.getElementById('frName').value.trim();
+  if (quantity<=0){ toast('請輸入進貨數量'); return; }
+  if (!name){ toast('請輸入經手人姓名'); return; }
+  await guardSubmit('submitFilterReceipt', async ()=>{
+    const { error } = await sb.rpc('receive_filter_stock', { p_item_id:item_id, p_qty:quantity, p_note:note, p_name:name });
+    if (error){ toast('登記失敗：'+error.message); return; }
+    toast('已登記進貨'); document.getElementById('frQty').value='1'; document.getElementById('frNote').value=''; loadAll();
+  });
+}
+async function toggleFilterOrderable(item_id, orderable){
+  await sb.from('filter_stock').update({ orderable, updated_at:new Date().toISOString() }).eq('item_id', item_id);
+  toast(orderable?'已開放下單':'已關閉下單'); loadAll();
+}
+function openFulfillFilterOrderModal(orderId){
+  const o = FILTER_ORDERS.find(x=>x.id===orderId);
+  if (!o) return;
+  const stock = FILTER_STOCK_ALL.find(f=>f.item_id===o.item_id);
+  const maxQty = Math.min(o.quantity, stock?stock.quantity:0);
+  openModal(`
+    <h3>確認出貨</h3>
+    <div class="field"><label>訂單</label><div>${storeName(o.store_id)} 訂購 ${itemName(o.item_id)} × ${o.quantity}</div></div>
+    <div class="field"><label>工廠目前庫存</label><div>${stock?stock.quantity:0}</div></div>
+    <div class="field"><label>實際出貨數量（最多 ${maxQty}）</label><input type="number" id="fulfillQty" min="0" max="${maxQty}" value="${maxQty}"></div>
+    <div class="field"><label>備註</label><input type="text" id="fulfillNote" placeholder="數量不足或其他說明（選填）"></div>
+    <div class="field"><label>經手人姓名</label><input type="text" id="fulfillName" placeholder="請輸入姓名"></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="confirmFulfillFilterOrder(${orderId})">確認</button>
+    </div>`);
+}
+async function confirmFulfillFilterOrder(orderId){
+  const qty = Number(document.getElementById('fulfillQty').value);
+  const note = document.getElementById('fulfillNote').value.trim() || null;
+  const name = document.getElementById('fulfillName').value.trim();
+  if (!name){ toast('請輸入經手人姓名'); return; }
+  const { error } = await sb.rpc('fulfill_filter_order', { p_order_id:orderId, p_actual_qty:qty, p_name:name, p_note:note });
+  if (error){ toast('出貨失敗：'+error.message); return; }
+  toast('已確認出貨'); closeModal(); loadAll();
 }
 
 // ══════════ 調貨申請審核 ══════════
@@ -1791,7 +1899,7 @@ document.addEventListener('click', e=>{
   if (!e.target.closest('#backupMenu') && e.target.tagName!=='BUTTON'){ menu.style.display='none'; }
 });
 // store_pins/factory_auth（登入密碼雜湊）刻意不納入備份範圍，避免明碼備份檔外流等同洩漏所有登入密碼
-const BACKUP_TABLES = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','batch_history','counting_sessions','cupping_beans','cupping_participants','cupping_sessions','cupping_roastery_staff'];
+const BACKUP_TABLES = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','batch_history','counting_sessions','cupping_beans','cupping_participants','cupping_sessions','cupping_roastery_staff','filter_stock','filter_stock_receipts','filter_orders'];
 async function exportBackup(){
   toggleBackupMenu();
   const tables = {};
