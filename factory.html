@@ -913,12 +913,21 @@ function renderFilterStockTab(){
   const decidedOrders = FILTER_ORDERS.filter(o=>o.status!=='pending');
   el.innerHTML = `
     <div class="section">
-      <h2>濾掛進貨登記</h2>
-      <div class="field"><label>品項</label><select id="frItem">${itemSelectOptionsGrouped(ITEMS)}</select></div>
-      <div class="field"><label>進貨數量</label><input type="number" id="frQty" min="1" value="1"></div>
-      <div class="field"><label>備註</label><input type="text" id="frNote"></div>
-      <div class="field"><label>經手人姓名</label><input type="text" id="frName" placeholder="請輸入姓名"></div>
-      <button class="btn" onclick="submitFilterReceipt()">登記進貨</button>
+      <details>
+        <summary style="cursor:pointer;font-weight:700;font-size:15px;">＋ 新增濾掛品項</summary>
+        <div style="margin-top:10px;">
+          ${(()=>{
+            const existingIds = new Set(FILTER_STOCK_ALL.map(f=>f.item_id));
+            const candidates = ITEMS.filter(i=>!existingIds.has(i.id));
+            if (!candidates.length) return `<div class="empty-msg">所有品項都已經是濾掛品項了</div>`;
+            return `
+              <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">從既有咖啡豆品項中選擇要製作濾掛的品項，沿用原本的名稱與分類，不需重複建立。新加入的品項預設不開放下單。</p>
+              <div class="field"><label>品項</label><select id="afiItem">${itemSelectOptionsGrouped(candidates)}</select></div>
+              <div class="field"><label>初始庫存數量</label><input type="number" id="afiQty" min="0" step="1" value="0"></div>
+              <button class="btn" onclick="submitAddFilterItem()">新增濾掛品項</button>`;
+          })()}
+        </div>
+      </details>
     </div>
     <div class="section">
       <h2>濾掛總庫存
@@ -954,18 +963,28 @@ function renderFilterStockTab(){
       </table>` : `<div class="empty-msg">尚無紀錄</div>`}
     </div>`;
 }
-async function submitFilterReceipt(){
-  const item_id = Number(document.getElementById('frItem').value);
-  const quantity = Number(document.getElementById('frQty').value||0);
-  const note = document.getElementById('frNote').value.trim() || null;
-  const name = document.getElementById('frName').value.trim();
-  if (quantity<=0){ toast('請輸入進貨數量'); return; }
-  if (!name){ toast('請輸入經手人姓名'); return; }
-  await guardSubmit('submitFilterReceipt', async ()=>{
-    const { error } = await sb.rpc('receive_filter_stock', { p_item_id:item_id, p_qty:quantity, p_note:note, p_name:name });
-    if (error){ toast('登記失敗：'+error.message); return; }
-    toast('已登記進貨'); document.getElementById('frQty').value='1'; document.getElementById('frNote').value=''; loadAll();
+async function submitAddFilterItem(){
+  const item_id = Number(document.getElementById('afiItem').value);
+  const qtyStr = document.getElementById('afiQty').value.trim();
+  if (!/^\d+$/.test(qtyStr)){ toast('初始庫存數量必須是非負整數'); return; }
+  const quantity = Number(qtyStr);
+  await guardSubmit('submitAddFilterItem', async ()=>{
+    const { error } = await sb.from('filter_stock').insert({ item_id, quantity, orderable:false });
+    if (error){ toast(error.code==='23505' ? '此品項已經是濾掛品項' : '新增失敗：'+error.message); return; }
+    toast('已新增濾掛品項'); loadAll();
   });
+}
+async function deleteFilterStockItem(item_id){
+  const f = FILTER_STOCK_ALL.find(x=>x.item_id===item_id);
+  if (!f) return;
+  if (Number(f.quantity) !== 0){ toast('可用庫存須為 0 才能刪除'); return; }
+  if (filterEventHoldQty(item_id) !== 0){ toast('活動暫存尚未歸零，無法刪除'); return; }
+  if (FILTER_ORDERS.some(o=>o.item_id===item_id && o.status==='pending')){ toast('尚有未完成的訂購申請，無法刪除'); return; }
+  if (BATCHES.some(b=>b.item_id===item_id && b.channel==='filter')){ toast('門市仍有此品項的濾掛庫存，請先處理完畢'); return; }
+  if (!confirm(`確定要刪除濾掛品項「${itemName(item_id)}」嗎？會從濾掛庫存管理移除，但歷史進貨／訂單／庫存異動紀錄會保留，日後可再次新增加回。`)) return;
+  const { error } = await sb.rpc('delete_filter_stock_item', { p_item_id: item_id });
+  if (error){ toast('刪除失敗：'+error.message); return; }
+  toast('已刪除濾掛品項'); loadAll();
 }
 async function toggleFilterOrderable(item_id, orderable){
   await sb.from('filter_stock').update({ orderable, updated_at:new Date().toISOString() }).eq('item_id', item_id);
@@ -1025,7 +1044,12 @@ function renderFilterStockGrouped(){
             <td data-label="可用庫存">${filterStockEditMode ? `<input type="number" class="fs-edit-qty mini-input" data-item-id="${id}" min="0" step="1" value="${f.quantity}">` : f.quantity}</td>
             <td data-label="活動暫存">${filterEventHoldQty(id)}</td>
             <td data-label="可下單">${f.orderable?'<span class="badge" style="background:var(--ok)">開放中</span>':'<span class="badge">未開放</span>'}</td>
-            <td data-label="操作"><button class="btn-outline" onclick="toggleFilterOrderable(${id}, ${!f.orderable})">${f.orderable?'關閉下單':'開放下單'}</button></td>
+            <td data-label="操作">
+              <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center;">
+                <button class="btn-outline" onclick="toggleFilterOrderable(${id}, ${!f.orderable})">${f.orderable?'關閉下單':'開放下單'}</button>
+                ${filterStockEditMode ? `<button class="btn-danger" onclick="deleteFilterStockItem(${id})">刪除</button>` : ''}
+              </div>
+            </td>
           </tr>`;
         }).join('')}</tbody>
       </table>
@@ -2226,6 +2250,21 @@ async function handleRestoreFile(ev){
 if ('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
 }
+
+// ══════════ 自動偵測新版本（解決 iPad 加入主畫面後不會自動抓到最新部署版本的問題） ══════════
+// 原本想用 fetch 比對內容決定要不要重整，但實測發現 Safari 對同一路徑的第二次 fetch，
+// 即使加了 cache:'no-store' 也可能吃到快取、拿不到真正最新內容，不可靠。改成更直接的
+// 做法：App 重新回到前景、以及每隔一段時間，直接用帶新查詢字串的網址做一次真正的導覽
+// （location.href 而非 fetch），強迫瀏覽器當成不同網址重新跟伺服器要一次；正在輸入
+// 資料時延後，避免蓋掉使用者輸入。
+function forceFreshReload(){
+  if (isEditingInput()) return;
+  const base = location.pathname + location.search.replace(/[?&]_r=\d+/, '');
+  const sep = base.includes('?') ? '&' : '?';
+  location.href = base + sep + '_r=' + Date.now();
+}
+document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) forceFreshReload(); });
+setInterval(forceFreshReload, 30*60*1000);
 </script>
 </body>
 </html>

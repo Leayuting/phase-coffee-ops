@@ -1364,6 +1364,21 @@ if ('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
 }
 
+// ══════════ 自動偵測新版本（解決 iPad 加入主畫面後不會自動抓到最新部署版本的問題） ══════════
+// 原本想用 fetch 比對內容決定要不要重整，但實測發現 Safari 對同一路徑的第二次 fetch，
+// 即使加了 cache:'no-store' 也可能吃到快取、拿不到真正最新內容，不可靠。改成更直接的
+// 做法：App 重新回到前景、以及每隔一段時間，直接用帶新查詢字串的網址做一次真正的導覽
+// （location.href 而非 fetch），強迫瀏覽器當成不同網址重新跟伺服器要一次；正在輸入
+// 資料時延後，避免蓋掉使用者輸入。
+function forceFreshReload(){
+  if (isEditingInput()) return;
+  const base = location.pathname + location.search.replace(/[?&]_r=\d+/, '');
+  const sep = base.includes('?') ? '&' : '?';
+  location.href = base + sep + '_r=' + Date.now();
+}
+document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) forceFreshReload(); });
+setInterval(forceFreshReload, 30*60*1000);
+
 init();
 </script>
 </body>
