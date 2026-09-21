@@ -236,7 +236,6 @@ const TYPE_LABEL = { retail:'架上販售豆', brew:'門市沖煮豆', filter:'�
 const CUPPING_ENABLED = true;
 let CUPPING_BEANS = [], MY_CUPPING_PARTICIPANTS = [], MY_CUPPING_SESSIONS = [];
 let STORE_FILTER_STOCK = [];
-let filterStocktakeMode = false, filterStocktakeSnapshot = null;
 const CAT_META = {
   G: { zh:'蜜處理・日曬', color:'#b0b0b0', text:'var(--black)' },
   Y: { zh:'水洗',         color:'#e8c43a', text:'var(--black)' },
@@ -751,11 +750,7 @@ function renderTab(type){
   const el = document.getElementById('tab-'+type);
   el.innerHTML = `
     <div class="section">
-      <h2>本店庫存
-        ${type==='filter' ? `<span>${filterStocktakeMode
-          ? `<button class="btn" onclick="saveFilterStocktake()">儲存變更</button> <button class="btn-outline" onclick="cancelFilterStocktake()">取消</button>`
-          : `<button class="btn-sm" onclick="enterFilterStocktakeMode()">盤點</button>`}</span>` : ''}
-      </h2>
+      <h2>本店庫存</h2>
       ${type==='retail' ? `<div class="legend"><span><i style="background:#e8c43a"></i>烘焙14–20天</span><span><i style="background:#c0453a"></i>烘焙21天以上</span></div>` : ''}
       <div id="${type}-batchList">${type==='filter' ? renderStoreFilterStockList() : renderBatchList(type)}</div>
     </div>
@@ -1307,66 +1302,33 @@ function renderStoreFilterStockList(){
       <table class="batch-table">
         <thead><tr><th>品項</th><th>庫存數量</th><th>最近更新</th></tr></thead>
         <tbody>${g.items.map(f=>`
-          <tr data-item-id="${f.item_id}" data-quantity="${f.quantity}">
+          <tr>
             <td data-label="品項">${itemName(f.item_id)}</td>
-            <td data-label="庫存數量">${filterStocktakeMode
-              ? `<input type="number" class="batch-qty-input fs-stocktake-qty" min="0" step="1" value="${f.quantity}" ${STORE_ROLE==='viewer'?'disabled':''}>`
-              : f.quantity}</td>
+            <td data-label="庫存數量"><input class="batch-qty-input" type="number" min="0" step="1" value="${f.quantity}" ${STORE_ROLE==='viewer'?'disabled':''}
+              onchange="updateStoreFilterStockQty(${f.item_id}, this.value)"></td>
             <td data-label="最近更新">${fmtDTShort(f.updated_at)}</td>
           </tr>`).join('')}</tbody>
       </table>
     </details>`).join('');
 }
-function enterFilterStocktakeMode(){
-  if (STORE_ROLE==='viewer'){ toast('檢視模式無法執行此操作'); return; }
-  filterStocktakeSnapshot = new Map(STORE_FILTER_STOCK.map(f=>[f.item_id, f.quantity]));
-  filterStocktakeMode = true;
-  renderTab('filter');
+function updateStoreFilterStockQty(item_id, val){
+  doUpdateStoreFilterStockQty(item_id, val);
 }
-function cancelFilterStocktake(){
-  filterStocktakeMode = false;
-  filterStocktakeSnapshot = null;
-  renderTab('filter');
-}
-async function saveFilterStocktake(){
-  const rows = Array.from(document.querySelectorAll('#filter-batchList tr[data-item-id]'));
-  const changed = [];
-  for (const row of rows){
-    const val = row.querySelector('.fs-stocktake-qty').value.trim();
-    if (!/^\d+$/.test(val)){ toast('庫存數量必須是非負整數（品項：'+itemName(Number(row.dataset.itemId))+'）'); return; }
-    const item_id = Number(row.dataset.itemId);
-    const newQty = Number(val);
-    const expected = filterStocktakeSnapshot.get(item_id);
-    if (newQty !== expected) changed.push({ item_id, expected_quantity:expected, new_quantity:newQty });
+async function doUpdateStoreFilterStockQty(item_id, val){
+  const q = Number(val);
+  if (!Number.isInteger(q) || q<0){ toast('庫存數量必須是非負整數'); render(); return; }
+  const cur = STORE_FILTER_STOCK.find(f=>f.item_id===item_id);
+  const expected = cur ? cur.quantity : 0;
+  if (q === expected) return;
+  const { data, error } = await sb.rpc('adjust_store_filter_stock', { p_store_id: STORE_ID, p_items: [{ item_id, expected_quantity:expected, new_quantity:q }] });
+  if (error){ toast('更新失敗：'+error.message); render(); return; }
+  const conflicts = (data && data.conflicts) || [];
+  if (conflicts.length){
+    toast(`此品項剛被其他異動更新過，畫面已顯示最新數量（${conflicts[0].actual}），請重新確認`);
+  } else {
+    toast('已更新數量');
   }
-  if (!changed.length){
-    toast('沒有變更'); filterStocktakeMode = false; filterStocktakeSnapshot = null; renderTab('filter'); return;
-  }
-  await guardSubmit('saveFilterStocktake', async ()=>{
-    const { data, error } = await sb.rpc('adjust_store_filter_stock', { p_store_id: STORE_ID, p_items: changed });
-    if (error){ toast('儲存失敗：'+error.message); return; }
-    filterStocktakeMode = false; filterStocktakeSnapshot = null;
-    const conflicts = (data && data.conflicts) || [];
-    if (conflicts.length){
-      openModal(`
-        <h3>部分品項未儲存</h3>
-        <p style="color:var(--gray-50);font-size:12.5px;margin-bottom:10px;">以下品項在您盤點的同時已被其他異動改過，為避免覆蓋最新數量，這些品項本次未儲存，請重新確認後再盤點一次：</p>
-        <table>
-          <thead><tr><th>品項</th><th>您看到的數量</th><th>目前實際數量</th></tr></thead>
-          <tbody>${conflicts.map(c=>`
-            <tr>
-              <td data-label="品項">${itemName(c.item_id)}</td>
-              <td data-label="您看到的數量">${c.expected}</td>
-              <td data-label="目前實際數量">${c.actual}</td>
-            </tr>`).join('')}</tbody>
-        </table>
-        <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">關閉</button></div>`);
-      toast(`已儲存 ${changed.length - conflicts.length} 項，${conflicts.length} 項因衝突未儲存`);
-    } else {
-      toast(`已儲存 ${changed.length} 項庫存異動`);
-    }
-    loadAll();
-  });
+  loadAll();
 }
 function openAddStoreFilterItemModal(){
   if (STORE_ROLE==='viewer'){ toast('檢視模式無法執行此操作'); return; }
