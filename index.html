@@ -175,7 +175,7 @@ tr.batch-row.pending{opacity:.6;}
     <section id="tab-cupping" class="tab-panel"></section>
   </main>
   <div id="lastCountedFooter" class="counter-bar" style="cursor:default;"></div>
-  <button id="fabAddStock" class="btn" style="display:none;position:fixed;bottom:22px;right:18px;border-radius:28px;padding:13px 20px;box-shadow:0 4px 14px rgba(0,0,0,.28);z-index:80;" onclick="openAddBatchModal(CURRENT_TAB)">＋ 新增庫存</button>
+  <button id="fabAddStock" class="btn" style="display:none;position:fixed;bottom:22px;right:18px;border-radius:28px;padding:13px 20px;box-shadow:0 4px 14px rgba(0,0,0,.28);z-index:80;" onclick="handleFabClick()">＋ 新增庫存</button>
 </div>
 
 <div class="overlay" id="overlay"><div class="modal" id="modalBody"></div></div>
@@ -593,9 +593,17 @@ function switchTab(tab){
 function updateAddStockFab(){
   const fab = document.getElementById('fabAddStock');
   if (!fab) return;
-  // 濾掛新增庫存須透過工廠供貨流程（進貨/下單），門市不能自由新增，只保留盤點調整既有批次
-  const show = STORE_ROLE!=='viewer' && ['retail','brew'].includes(CURRENT_TAB);
-  fab.style.display = show ? 'block' : 'none';
+  if (STORE_ROLE==='viewer' || !['retail','brew','filter'].includes(CURRENT_TAB)){
+    fab.style.display = 'none'; return;
+  }
+  fab.style.display = 'block';
+  // 濾掛新增庫存須透過工廠供貨流程（訂購），門市不能自由新增，只保留盤點調整既有批次；
+  // FAB 在濾掛分頁改成「訂購濾掛」，位置/樣式跟其他分頁的「新增庫存」完全一致
+  fab.textContent = CURRENT_TAB==='filter' ? '＋ 訂購濾掛' : '＋ 新增庫存';
+}
+function handleFabClick(){
+  if (CURRENT_TAB==='filter') openFilterOrderModal();
+  else openAddBatchModal(CURRENT_TAB);
 }
 
 // ══════════ RENDER ══════════
@@ -754,7 +762,11 @@ function renderTab(type){
       <h2>工廠回收指示</h2>
       <div id="${type}-returnList">${renderReturnList(type)}</div>
     </div>
-    ${type==='filter' ? renderFilterOrderSection() : ''}
+    ${type==='filter' ? `
+    <div class="section">
+      <h2>我的濾掛訂購紀錄</h2>
+      ${renderMyFilterOrders()}
+    </div>` : ''}
   `;
 }
 
@@ -1275,45 +1287,106 @@ function viewCuppingSessionReadonly(sessionId){
     <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">關閉</button></div>`);
 }
 // ══════════ 濾掛：向工廠訂購（總庫存統一由工廠端管理） ══════════
-function renderFilterOrderSection(){
-  return `
-    <div class="section">
-      <h2>向工廠訂購濾掛</h2>
-      ${FILTER_STOCK.length ? `
-        <div class="field"><label>品項</label><select id="foItem">${FILTER_STOCK.map(f=>`<option value="${f.item_id}">${itemName(f.item_id)}（工廠現有 ${f.quantity}）</option>`).join('')}</select></div>
-        <div class="field"><label>訂購數量</label><input type="number" id="foQty" min="1" value="1"></div>
-        ${STORE_ROLE!=='viewer' ? `<button class="btn" onclick="submitFilterOrder()">送出訂購</button>` : ''}
-      ` : `<div class="empty-msg">工廠目前沒有開放可下單的濾掛品項</div>`}
-    </div>
-    <div class="section">
-      <h2>我的濾掛訂購紀錄</h2>
-      ${renderMyFilterOrders()}
-    </div>`;
-}
 function renderMyFilterOrders(){
   if (!MY_FILTER_ORDERS.length) return `<div class="empty-msg">尚無訂購紀錄</div>`;
-  const label = { pending:'待工廠出貨', fulfilled:'已出貨', rejected:'已拒絕' };
-  const cls = { pending:'status-pending', fulfilled:'status-approved', rejected:'status-rejected' };
+  const label = { pending:'待工廠出貨', fulfilled:'已出貨，待確認收貨', received:'已收貨', rejected:'已拒絕' };
+  const cls = { pending:'status-pending', fulfilled:'status-approved', received:'status-decided', rejected:'status-rejected' };
   return MY_FILTER_ORDERS.map(o=>`
     <div class="addon-item">
       <div>${itemName(o.item_id)} × ${o.quantity}${o.actual_quantity!=null && o.actual_quantity!==o.quantity ? `（實際出貨 ${o.actual_quantity}）` : ''}<br>
         <span style="color:var(--gray-50)">${o.decision_note||''}</span></div>
-      <span class="status-pill ${cls[o.status]}">${label[o.status]}</span>
+      ${o.status==='fulfilled' && STORE_ROLE!=='viewer'
+        ? `<button class="btn-sm" onclick="confirmFilterOrderReceipt(${o.id})">確認收貨</button>`
+        : `<span class="status-pill ${cls[o.status]}">${label[o.status]}</span>`}
     </div>`).join('');
 }
-function submitFilterOrder(){
-  ensureCounterName(doSubmitFilterOrder);
+async function confirmFilterOrderReceipt(orderId){
+  ensureCounterName(()=>doConfirmFilterOrderReceipt(orderId));
 }
-async function doSubmitFilterOrder(){
-  const item_id = Number(document.getElementById('foItem').value);
-  const quantity = Number(document.getElementById('foQty').value||0);
-  if (quantity<=0){ toast('請輸入訂購數量'); return; }
-  const stock = FILTER_STOCK.find(f=>f.item_id===item_id);
-  if (stock && quantity>stock.quantity){ toast(`數量不能超過工廠現有的 ${stock.quantity}`); return; }
-  await guardSubmit('submitFilterOrder', async ()=>{
-    const { error } = await sb.from('filter_orders').insert({ store_id:STORE_ID, item_id, quantity, requested_by:counterName, status:'pending' });
+async function doConfirmFilterOrderReceipt(orderId){
+  const { error } = await sb.rpc('confirm_filter_order_receipt', { p_order_id: orderId, p_received_by: counterName });
+  if (error){ toast('確認失敗：'+error.message); return; }
+  toast('已確認收貨，庫存已更新'); loadAll();
+}
+
+// ── 訂購濾掛：一次填寫多個品項，依分類分組，跟本店庫存共用同一套 CAT_META/.batch-table 樣式 ──
+function groupFilterStockByCategory(){
+  const groups = {};
+  FILTER_STOCK.forEach(f=>{
+    const it = ITEMS.find(i=>i.id===f.item_id);
+    const c = (it && it.category_code) || '';
+    (groups[c] ||= []).push(f);
+  });
+  const codes = [...CAT_ORDER, ''].filter(c=>groups[c] && groups[c].length);
+  return codes.map(c=>({
+    meta: c ? CAT_META[c] : { zh:'未分類', color:'var(--gray-30)', text:'#fff' },
+    items: groups[c]
+  }));
+}
+function openFilterOrderModal(){
+  ensureCounterName(doOpenFilterOrderModal);
+}
+function doOpenFilterOrderModal(){
+  if (!FILTER_STOCK.length){ toast('工廠目前沒有開放可下單的濾掛品項'); return; }
+  const groups = groupFilterStockByCategory();
+  openModal(`
+    <h3>訂購濾掛</h3>
+    <p style="color:var(--gray-50);font-size:12.5px;margin-bottom:10px;">留白或輸入 0 代表不訂購，可一次填寫多個品項後統一送出。</p>
+    <div id="filterOrderRows">
+      ${groups.map(g=>`
+        <details open style="margin-bottom:8px;border:1px solid var(--gray-08);border-radius:6px;overflow:hidden;">
+          <summary style="background:${g.meta.color};color:${g.meta.text};padding:9px 12px;font-weight:700;cursor:pointer;list-style:none;">
+            ${g.meta.zh}（${g.items.length}）
+          </summary>
+          <table class="batch-table">
+            <thead><tr><th>品項</th><th>可訂購</th><th>訂購數量</th></tr></thead>
+            <tbody>${g.items.map(f=>`
+              <tr data-item-id="${f.item_id}" data-available="${f.quantity}">
+                <td data-label="品項">${itemName(f.item_id)}</td>
+                <td data-label="可訂購">${f.quantity}</td>
+                <td data-label="訂購數量"><input type="number" class="fo-qty batch-qty-input" min="0" step="1" placeholder="0" oninput="updateFilterOrderSummary()"></td>
+              </tr>`).join('')}</tbody>
+          </table>
+        </details>`).join('')}
+    </div>
+    <div id="filterOrderSummary" style="margin:10px 0;font-size:13px;font-weight:700;">已選 0 項品項，共 0 包</div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="submitFilterOrderMulti()">送出訂購</button>
+    </div>`);
+}
+function updateFilterOrderSummary(){
+  const rows = Array.from(document.querySelectorAll('#filterOrderRows tr[data-item-id]'));
+  let itemCount = 0, totalQty = 0;
+  rows.forEach(row=>{
+    const qty = Number(row.querySelector('.fo-qty').value || 0);
+    if (qty > 0){ itemCount++; totalQty += qty; }
+  });
+  const el = document.getElementById('filterOrderSummary');
+  if (el) el.textContent = `已選 ${itemCount} 項品項，共 ${totalQty} 包`;
+}
+async function submitFilterOrderMulti(){
+  const rows = Array.from(document.querySelectorAll('#filterOrderRows tr[data-item-id]'));
+  const toOrder = [];
+  let hasProblem = false;
+  rows.forEach(row=>{
+    row.style.background = '';
+    const qty = Number(row.querySelector('.fo-qty').value || 0);
+    if (qty <= 0) return;
+    const available = Number(row.dataset.available);
+    if (qty > available){
+      row.style.background = '#fbe4e1';
+      hasProblem = true;
+      return;
+    }
+    toOrder.push({ store_id:STORE_ID, item_id:Number(row.dataset.itemId), quantity:qty, requested_by:counterName, status:'pending' });
+  });
+  if (hasProblem){ toast('部分品項訂購數量超過可訂購數量，已標示問題品項，請修改後再送出'); return; }
+  if (!toOrder.length){ toast('請至少填寫一項訂購數量'); return; }
+  await guardSubmit('submitFilterOrderMulti', async ()=>{
+    const { error } = await sb.from('filter_orders').insert(toOrder);
     if (error){ toast('送出失敗：'+error.message); return; }
-    toast('已送出訂購申請'); loadAll();
+    closeModal(); toast(`已送出訂購，共 ${toOrder.length} 項品項`); loadAll();
   });
 }
 function checkFilterOrderNotifications(){

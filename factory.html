@@ -957,7 +957,7 @@ function renderFilterStockTab(){
             <td data-label="品項">${itemName(o.item_id)}</td>
             <td data-label="申請數量">${o.quantity}</td>
             <td data-label="實際出貨">${o.actual_quantity!=null?o.actual_quantity:'—'}</td>
-            <td data-label="狀態">${o.status==='fulfilled'?'<span class="status-pill status-approved">已出貨</span>':'<span class="status-pill status-rejected">已拒絕</span>'}</td>
+            <td data-label="狀態">${o.status==='received'?'<span class="status-pill status-decided">已收貨</span>':o.status==='fulfilled'?'<span class="status-pill status-approved">已出貨，待門市收貨</span>':'<span class="status-pill status-rejected">已拒絕</span>'}</td>
             <td data-label="備註">${o.decision_note||'—'}</td>
           </tr>`).join('')}</tbody>
       </table>` : `<div class="empty-msg">尚無紀錄</div>`}
