@@ -80,6 +80,7 @@ tr[data-item-id].dragging{opacity:.4;background:var(--gray-08);}
 .filter-stock-table th:nth-child(5),.filter-stock-table td:nth-child(5){width:15%;text-align:center;}
 .filter-stock-table .btn-outline{min-width:84px;height:30px;padding:0 8px;display:inline-flex;align-items:center;justify-content:center;}
 .filter-stock-table .badge{display:inline-block;min-width:56px;text-align:center;}
+.filter-stock-table input.fs-edit-qty{width:100%;max-width:72px;text-align:center;margin:0 auto;display:block;}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:200;padding:16px;}
 .overlay.show{display:flex;}
 .modal{background:#fff;border-radius:14px;width:100%;max-width:420px;padding:20px;max-height:88vh;overflow:auto;}
@@ -246,6 +247,7 @@ function todayStr(){ const p = taipeiParts(Date.now()); return dateStr(p.y,p.m,p
 // ══════════ STATE ══════════
 let STORES = [], ITEMS_ALL = [], ITEMS = [];
 let FILTER_STOCK_ALL = [], FILTER_ORDERS = [];
+let filterStockEditMode = false, filterStockEditSnapshot = null;
 let FILTER_EVENTS = [], FILTER_EVENT_ITEMS = [];
 let FACTORY_PINS = [];
 let BATCHES = [], RETURNS = [], TRANSFERS = [];
@@ -919,7 +921,11 @@ function renderFilterStockTab(){
       <button class="btn" onclick="submitFilterReceipt()">登記進貨</button>
     </div>
     <div class="section">
-      <h2>濾掛總庫存</h2>
+      <h2>濾掛總庫存
+        <span>${filterStockEditMode
+          ? `<button class="btn" onclick="saveFilterStockEdit()">儲存變更</button> <button class="btn-outline" onclick="cancelFilterStockEdit()">取消</button>`
+          : `<button class="btn-sm" onclick="enterFilterStockEditMode()">編輯庫存</button>`}</span>
+      </h2>
       ${renderFilterStockGrouped()}
     </div>
     <div class="section">
@@ -1016,7 +1022,7 @@ function renderFilterStockGrouped(){
           const f = stockMap.get(id);
           return `<tr>
             <td data-label="品項">${itemName(id)}</td>
-            <td data-label="可用庫存">${f.quantity}</td>
+            <td data-label="可用庫存">${filterStockEditMode ? `<input type="number" class="fs-edit-qty mini-input" data-item-id="${id}" min="0" step="1" value="${f.quantity}">` : f.quantity}</td>
             <td data-label="活動暫存">${filterEventHoldQty(id)}</td>
             <td data-label="可下單">${f.orderable?'<span class="badge" style="background:var(--ok)">開放中</span>':'<span class="badge">未開放</span>'}</td>
             <td data-label="操作"><button class="btn-outline" onclick="toggleFilterOrderable(${id}, ${!f.orderable})">${f.orderable?'關閉下單':'開放下單'}</button></td>
@@ -1024,6 +1030,56 @@ function renderFilterStockGrouped(){
         }).join('')}</tbody>
       </table>
     </details>`).join('');
+}
+function enterFilterStockEditMode(){
+  filterStockEditSnapshot = new Map(FILTER_STOCK_ALL.map(f=>[f.item_id, f.quantity]));
+  filterStockEditMode = true;
+  renderFilterStockTab();
+}
+function cancelFilterStockEdit(){
+  filterStockEditMode = false;
+  filterStockEditSnapshot = null;
+  renderFilterStockTab();
+}
+async function saveFilterStockEdit(){
+  const inputs = Array.from(document.querySelectorAll('.fs-edit-qty'));
+  const changed = [];
+  for (const input of inputs){
+    const item_id = Number(input.dataset.itemId);
+    const val = input.value.trim();
+    if (!/^\d+$/.test(val)){ toast('庫存數量必須是非負整數（品項：'+itemName(item_id)+'）'); return; }
+    const newQty = Number(val);
+    const expected = filterStockEditSnapshot.get(item_id);
+    if (newQty !== expected) changed.push({ item_id, expected_quantity: expected, new_quantity: newQty });
+  }
+  if (!changed.length){
+    toast('沒有變更'); filterStockEditMode = false; filterStockEditSnapshot = null; renderFilterStockTab(); return;
+  }
+  await guardSubmit('saveFilterStockEdit', async ()=>{
+    const { data, error } = await sb.rpc('adjust_filter_stock', { p_items: changed });
+    if (error){ toast('儲存失敗：'+error.message); return; }
+    filterStockEditMode = false; filterStockEditSnapshot = null;
+    const conflicts = (data && data.conflicts) || [];
+    if (conflicts.length){
+      openModal(`
+        <h3>部分品項未儲存</h3>
+        <p style="color:var(--gray-50);font-size:12.5px;margin-bottom:10px;">以下品項在您編輯的同時已被其他異動改過，為避免覆蓋最新數量，這些品項本次未儲存，請重新確認後再編輯一次：</p>
+        <table>
+          <thead><tr><th>品項</th><th>您看到的數量</th><th>目前實際數量</th></tr></thead>
+          <tbody>${conflicts.map(c=>`
+            <tr>
+              <td data-label="品項">${itemName(c.item_id)}</td>
+              <td data-label="您看到的數量">${c.expected}</td>
+              <td data-label="目前實際數量">${c.actual}</td>
+            </tr>`).join('')}</tbody>
+        </table>
+        <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">關閉</button></div>`);
+      toast(`已儲存 ${changed.length - conflicts.length} 項，${conflicts.length} 項因衝突未儲存`);
+    } else {
+      toast(`已儲存 ${changed.length} 項庫存異動`);
+    }
+    loadAll();
+  });
 }
 function renderFilterEventsSection(){
   const activeEvents = FILTER_EVENTS.filter(e=>e.status==='active');
@@ -2134,7 +2190,7 @@ document.addEventListener('click', e=>{
   if (!e.target.closest('#backupMenu') && e.target.tagName!=='BUTTON'){ menu.style.display='none'; }
 });
 // store_pins/factory_auth（登入密碼雜湊）刻意不納入備份範圍，避免明碼備份檔外流等同洩漏所有登入密碼
-const BACKUP_TABLES = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','batch_history','counting_sessions','cupping_beans','cupping_participants','cupping_sessions','cupping_roastery_staff','filter_stock','filter_stock_receipts','filter_orders','filter_events','filter_event_items'];
+const BACKUP_TABLES = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','batch_history','counting_sessions','cupping_beans','cupping_participants','cupping_sessions','cupping_roastery_staff','filter_stock','filter_stock_receipts','filter_orders','filter_events','filter_event_items','filter_stock_adjustments'];
 async function exportBackup(){
   toggleBackupMenu();
   const tables = {};
