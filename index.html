@@ -593,7 +593,8 @@ function switchTab(tab){
 function updateAddStockFab(){
   const fab = document.getElementById('fabAddStock');
   if (!fab) return;
-  const show = STORE_ROLE!=='viewer' && ['retail','brew','filter'].includes(CURRENT_TAB);
+  // 濾掛新增庫存須透過工廠供貨流程（進貨/下單），門市不能自由新增，只保留盤點調整既有批次
+  const show = STORE_ROLE!=='viewer' && ['retail','brew'].includes(CURRENT_TAB);
   fab.style.display = show ? 'block' : 'none';
 }
 
