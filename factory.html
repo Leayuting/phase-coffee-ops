@@ -70,6 +70,16 @@ tr[data-item-id].dragging{opacity:.4;background:var(--gray-08);}
 .status-rejected{background:var(--red-bg);color:var(--danger);}
 .addon-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--gray-08);flex-wrap:wrap;}
 .addon-row:first-child{border-top:none;}
+/* 濾掛庫存管理：所有分類共用固定欄寬，不依品項名稱長度自動調整 */
+.filter-stock-table{table-layout:fixed;}
+.filter-stock-table th,.filter-stock-table td{vertical-align:middle;padding:9px 8px;font-size:13px;border-bottom:1px solid var(--gray-08);}
+.filter-stock-table th:nth-child(1),.filter-stock-table td:nth-child(1){width:40%;text-align:left;overflow-wrap:anywhere;}
+.filter-stock-table th:nth-child(2),.filter-stock-table td:nth-child(2){width:15%;text-align:center;}
+.filter-stock-table th:nth-child(3),.filter-stock-table td:nth-child(3){width:15%;text-align:center;}
+.filter-stock-table th:nth-child(4),.filter-stock-table td:nth-child(4){width:15%;text-align:center;}
+.filter-stock-table th:nth-child(5),.filter-stock-table td:nth-child(5){width:15%;text-align:center;}
+.filter-stock-table .btn-outline{min-width:84px;height:30px;padding:0 8px;display:inline-flex;align-items:center;justify-content:center;}
+.filter-stock-table .badge{display:inline-block;min-width:56px;text-align:center;}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:200;padding:16px;}
 .overlay.show{display:flex;}
 .modal{background:#fff;border-radius:14px;width:100%;max-width:420px;padding:20px;max-height:88vh;overflow:auto;}
@@ -82,17 +92,35 @@ tr[data-item-id].dragging{opacity:.4;background:var(--gray-08);}
 .modal-actions .btn,.modal-actions .btn-outline{flex:1;text-align:center;}
 @media (max-width:800px){
   .grid3{grid-template-columns:1fr;}
-  table,thead,tbody,tr{display:block;}
-  th{display:none;}
-  td{display:flex;justify-content:space-between;align-items:center;gap:10px;border:none;padding:5px 0;text-align:right;}
-  td::before{content:attr(data-label);color:var(--gray-50);font-size:11.5px;text-align:left;white-space:nowrap;}
-  tr{border-bottom:1px solid var(--gray-10);padding:8px 0;}
+  table:not(.filter-stock-table),thead:not(.filter-stock-table thead),tbody:not(.filter-stock-table tbody),tr:not(.filter-stock-table tr){display:block;}
+  th:not(.filter-stock-table th){display:none;}
+  td:not(.filter-stock-table td){display:flex;justify-content:space-between;align-items:center;gap:10px;border:none;padding:5px 0;text-align:right;}
+  td:not(.filter-stock-table td)::before{content:attr(data-label);color:var(--gray-50);font-size:11.5px;text-align:left;white-space:nowrap;}
+  tr:not(.filter-stock-table tr){border-bottom:1px solid var(--gray-10);padding:8px 0;}
   header{padding:14px 16px;flex-wrap:wrap;}
   header .title{font-size:15px;}
   main{padding:12px;}
   .section{padding:13px;}
   .date-age{display:flex;flex-direction:column;align-items:flex-end;gap:2px;}
   .tabs{-webkit-mask-image:linear-gradient(to right,#000 92%,transparent 100%);mask-image:linear-gradient(to right,#000 92%,transparent 100%);}
+  /* 濾掛庫存管理：改成名稱/數量/狀態+操作三段式卡片，不用通用的逐欄堆疊 */
+  .filter-stock-table{display:block;}
+  .filter-stock-table thead{display:none;}
+  .filter-stock-table tbody{display:block;}
+  .filter-stock-table tr{
+    display:grid;grid-template-columns:1fr 1fr;
+    grid-template-areas:"name name" "qty1 qty2" "status action";
+    gap:4px 10px;padding:10px 0;border-bottom:1px solid var(--gray-10);
+  }
+  .filter-stock-table td{padding:0;border:none;text-align:left;}
+  .filter-stock-table td:nth-child(1){grid-area:name;font-weight:600;overflow-wrap:anywhere;}
+  .filter-stock-table td:nth-child(2){grid-area:qty1;}
+  .filter-stock-table td:nth-child(3){grid-area:qty2;}
+  .filter-stock-table td:nth-child(4){grid-area:status;}
+  .filter-stock-table td:nth-child(5){grid-area:action;text-align:right;}
+  .filter-stock-table td:nth-child(2)::before,.filter-stock-table td:nth-child(3)::before,.filter-stock-table td:nth-child(4)::before{
+    content:attr(data-label)"：";color:var(--gray-50);font-size:11px;display:block;
+  }
 }
 .picker{padding:60px 18px;text-align:center;max-width:340px;margin:0 auto;}
 .picker h1{font-size:18px;margin-bottom:24px;}
@@ -982,8 +1010,8 @@ function renderFilterStockGrouped(){
       <summary style="background:${g.meta.color};color:${g.meta.text};padding:9px 12px;font-weight:700;cursor:pointer;list-style:none;">
         ${g.meta.zh}（${g.itemIds.length}）
       </summary>
-      <table>
-        <thead><tr><th>品項</th><th>可用庫存</th><th>活動暫存</th><th>可下單</th><th></th></tr></thead>
+      <table class="filter-stock-table">
+        <thead><tr><th>品項</th><th>可用庫存</th><th>活動暫存</th><th>可下單</th><th>操作</th></tr></thead>
         <tbody>${g.itemIds.map(id=>{
           const f = stockMap.get(id);
           return `<tr>
@@ -991,7 +1019,7 @@ function renderFilterStockGrouped(){
             <td data-label="可用庫存">${f.quantity}</td>
             <td data-label="活動暫存">${filterEventHoldQty(id)}</td>
             <td data-label="可下單">${f.orderable?'<span class="badge" style="background:var(--ok)">開放中</span>':'<span class="badge">未開放</span>'}</td>
-            <td data-label=""><button class="btn-outline" onclick="toggleFilterOrderable(${id}, ${!f.orderable})">${f.orderable?'關閉下單':'開放下單'}</button></td>
+            <td data-label="操作"><button class="btn-outline" onclick="toggleFilterOrderable(${id}, ${!f.orderable})">${f.orderable?'關閉下單':'開放下單'}</button></td>
           </tr>`;
         }).join('')}</tbody>
       </table>
