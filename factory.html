@@ -246,7 +246,7 @@ function todayStr(){ const p = taipeiParts(Date.now()); return dateStr(p.y,p.m,p
 
 // ══════════ STATE ══════════
 let STORES = [], ITEMS_ALL = [], ITEMS = [];
-let FILTER_STOCK_ALL = [], FILTER_ORDERS = [];
+let FILTER_STOCK_ALL = [];
 let filterStockEditMode = false, filterStockEditSnapshot = null;
 let FILTER_EVENTS = [], FILTER_EVENT_ITEMS = [];
 let FACTORY_PINS = [];
@@ -354,12 +354,11 @@ async function loadAll(){
     }
     queries.push(
       sb.from('filter_stock').select('*').order('item_id'),
-      sb.from('filter_orders').select('*').order('requested_at',{ascending:false}),
       sb.from('filter_events').select('*').order('created_at',{ascending:false}),
       sb.from('filter_event_items').select('*'),
       sb.rpc('list_factory_pins')
     );
-    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts},{data:signatures},{data:countLogs},cuppingBeansRes,cuppingParticipantsRes,cuppingSessionsRes,cuppingRoasteryStaffRes,filterStockRes,filterOrdersRes,filterEventsRes,filterEventItemsRes,factoryPinsRes] = await Promise.all(queries);
+    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts},{data:signatures},{data:countLogs},cuppingBeansRes,cuppingParticipantsRes,cuppingSessionsRes,cuppingRoasteryStaffRes,filterStockRes,filterEventsRes,filterEventItemsRes,factoryPinsRes] = await Promise.all(queries);
     STORES = stores || []; ITEMS_ALL = itemsAll || []; ITEMS = ITEMS_ALL.filter(i=>i.active);
     BATCHES = batches || []; RETURNS = returns || []; TRANSFERS = transfers || [];
     COUNT_LOGS = countLogs || [];
@@ -372,7 +371,6 @@ async function loadAll(){
       CUPPING_ROASTERY_STAFF = (cuppingRoasteryStaffRes && cuppingRoasteryStaffRes.data) || [];
     }
     FILTER_STOCK_ALL = (filterStockRes && filterStockRes.data) || [];
-    FILTER_ORDERS = (filterOrdersRes && filterOrdersRes.data) || [];
     FILTER_EVENTS = (filterEventsRes && filterEventsRes.data) || [];
     FILTER_EVENT_ITEMS = (filterEventItemsRes && filterEventItemsRes.data) || [];
     FACTORY_PINS = (factoryPinsRes && factoryPinsRes.data) || [];
@@ -402,7 +400,7 @@ document.addEventListener('focusout', ()=>{
 function subscribeRealtime(){
   const tables = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','counting_sessions'];
   if (CUPPING_ENABLED) tables.push('cupping_beans','cupping_participants','cupping_sessions','cupping_roastery_staff');
-  tables.push('filter_stock','filter_orders','filter_events','filter_event_items');
+  tables.push('filter_stock','filter_events','filter_event_items');
   const ch = sb.channel('factory-realtime');
   tables.forEach(t=>ch.on('postgres_changes',{event:'*',schema:'public',table:t}, scheduleReload));
   ch.subscribe(s=>{
@@ -909,8 +907,6 @@ async function initiateRecall(batchId){
 function renderFilterStockTab(){
   const el = document.getElementById('tab-filterstock');
   if (!el) return;
-  const pendingOrders = FILTER_ORDERS.filter(o=>o.status==='pending');
-  const decidedOrders = FILTER_ORDERS.filter(o=>o.status!=='pending');
   el.innerHTML = `
     <div class="section">
       <details>
@@ -921,7 +917,7 @@ function renderFilterStockTab(){
             const candidates = ITEMS.filter(i=>!existingIds.has(i.id));
             if (!candidates.length) return `<div class="empty-msg">所有品項都已經是濾掛品項了</div>`;
             return `
-              <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">從既有咖啡豆品項中選擇要製作濾掛的品項，沿用原本的名稱與分類，不需重複建立。新加入的品項預設不開放下單。</p>
+              <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">從既有咖啡豆品項中選擇要製作濾掛的品項，沿用原本的名稱與分類，不需重複建立。</p>
               <div class="field"><label>品項</label><select id="afiItem">${itemSelectOptionsGrouped(candidates)}</select></div>
               <div class="field"><label>初始庫存數量</label><input type="number" id="afiQty" min="0" step="1" value="0"></div>
               <button class="btn" onclick="submitAddFilterItem()">新增濾掛品項</button>`;
@@ -930,38 +926,14 @@ function renderFilterStockTab(){
       </details>
     </div>
     <div class="section">
-      <h2>濾掛總庫存
+      <h2>工廠濾掛庫存
         <span>${filterStockEditMode
           ? `<button class="btn" onclick="saveFilterStockEdit()">儲存變更</button> <button class="btn-outline" onclick="cancelFilterStockEdit()">取消</button>`
           : `<button class="btn-sm" onclick="enterFilterStockEditMode()">編輯庫存</button>`}</span>
       </h2>
       ${renderFilterStockGrouped()}
     </div>
-    <div class="section">
-      <h2>待處理訂購申請（${pendingOrders.length}）</h2>
-      ${pendingOrders.length ? pendingOrders.map(o=>`
-        <div class="addon-row">
-          <div><b>${storeName(o.store_id)}</b> 訂購 ${itemName(o.item_id)} × ${o.quantity}<br>
-            <span style="color:var(--gray-50)">申請人：${o.requested_by||'—'}・${fmtDT(new Date(o.requested_at).getTime())}</span></div>
-          <button class="btn-sm" onclick="openFulfillFilterOrderModal(${o.id})">確認出貨</button>
-        </div>`).join('') : `<div class="empty-msg">目前沒有待處理的訂購申請</div>`}
-    </div>
-    ${renderFilterEventsSection()}
-    <div class="section">
-      <h2>訂購歷史</h2>
-      ${decidedOrders.length ? `<table>
-        <thead><tr><th>門店</th><th>品項</th><th>申請數量</th><th>實際出貨</th><th>狀態</th><th>備註</th></tr></thead>
-        <tbody>${decidedOrders.map(o=>`
-          <tr>
-            <td data-label="門店">${storeName(o.store_id)}</td>
-            <td data-label="品項">${itemName(o.item_id)}</td>
-            <td data-label="申請數量">${o.quantity}</td>
-            <td data-label="實際出貨">${o.actual_quantity!=null?o.actual_quantity:'—'}</td>
-            <td data-label="狀態">${o.status==='received'?'<span class="status-pill status-decided">已收貨</span>':o.status==='fulfilled'?'<span class="status-pill status-approved">已出貨，待門市收貨</span>':'<span class="status-pill status-rejected">已拒絕</span>'}</td>
-            <td data-label="備註">${o.decision_note||'—'}</td>
-          </tr>`).join('')}</tbody>
-      </table>` : `<div class="empty-msg">尚無紀錄</div>`}
-    </div>`;
+    ${renderFilterEventsSection()}`;
 }
 async function submitAddFilterItem(){
   const item_id = Number(document.getElementById('afiItem').value);
@@ -979,42 +951,10 @@ async function deleteFilterStockItem(item_id){
   if (!f) return;
   if (Number(f.quantity) !== 0){ toast('可用庫存須為 0 才能刪除'); return; }
   if (filterEventHoldQty(item_id) !== 0){ toast('活動暫存尚未歸零，無法刪除'); return; }
-  if (FILTER_ORDERS.some(o=>o.item_id===item_id && o.status==='pending')){ toast('尚有未完成的訂購申請，無法刪除'); return; }
-  if (BATCHES.some(b=>b.item_id===item_id && b.channel==='filter')){ toast('門市仍有此品項的濾掛庫存，請先處理完畢'); return; }
-  if (!confirm(`確定要刪除濾掛品項「${itemName(item_id)}」嗎？會從濾掛庫存管理移除，但歷史進貨／訂單／庫存異動紀錄會保留，日後可再次新增加回。`)) return;
+  if (!confirm(`確定要刪除濾掛品項「${itemName(item_id)}」嗎？會從工廠濾掛庫存移除，但歷史進貨/庫存異動紀錄會保留，日後可再次新增加回；其他門市自己的濾掛庫存不受影響。`)) return;
   const { error } = await sb.rpc('delete_filter_stock_item', { p_item_id: item_id });
   if (error){ toast('刪除失敗：'+error.message); return; }
   toast('已刪除濾掛品項'); loadAll();
-}
-async function toggleFilterOrderable(item_id, orderable){
-  await sb.from('filter_stock').update({ orderable, updated_at:new Date().toISOString() }).eq('item_id', item_id);
-  toast(orderable?'已開放下單':'已關閉下單'); loadAll();
-}
-function openFulfillFilterOrderModal(orderId){
-  const o = FILTER_ORDERS.find(x=>x.id===orderId);
-  if (!o) return;
-  const stock = FILTER_STOCK_ALL.find(f=>f.item_id===o.item_id);
-  const maxQty = Math.min(o.quantity, stock?stock.quantity:0);
-  openModal(`
-    <h3>確認出貨</h3>
-    <div class="field"><label>訂單</label><div>${storeName(o.store_id)} 訂購 ${itemName(o.item_id)} × ${o.quantity}</div></div>
-    <div class="field"><label>工廠目前庫存</label><div>${stock?stock.quantity:0}</div></div>
-    <div class="field"><label>實際出貨數量（最多 ${maxQty}）</label><input type="number" id="fulfillQty" min="0" max="${maxQty}" value="${maxQty}"></div>
-    <div class="field"><label>備註</label><input type="text" id="fulfillNote" placeholder="數量不足或其他說明（選填）"></div>
-    <div class="field"><label>經手人姓名</label><input type="text" id="fulfillName" placeholder="請輸入姓名"></div>
-    <div class="modal-actions">
-      <button class="btn-outline" onclick="closeModal()">取消</button>
-      <button class="btn" onclick="confirmFulfillFilterOrder(${orderId})">確認</button>
-    </div>`);
-}
-async function confirmFulfillFilterOrder(orderId){
-  const qty = Number(document.getElementById('fulfillQty').value);
-  const note = document.getElementById('fulfillNote').value.trim() || null;
-  const name = document.getElementById('fulfillName').value.trim();
-  if (!name){ toast('請輸入經手人姓名'); return; }
-  const { error } = await sb.rpc('fulfill_filter_order', { p_order_id:orderId, p_actual_qty:qty, p_name:name, p_note:note });
-  if (error){ toast('出貨失敗：'+error.message); return; }
-  toast('已確認出貨'); closeModal(); loadAll();
 }
 
 // ── 濾掛活動庫存（領用／盤點結案，庫存移轉不重複增加總庫存） ──
@@ -1036,19 +976,16 @@ function renderFilterStockGrouped(){
         ${g.meta.zh}（${g.itemIds.length}）
       </summary>
       <table class="filter-stock-table">
-        <thead><tr><th>品項</th><th>可用庫存</th><th>活動暫存</th><th>可下單</th><th>操作</th></tr></thead>
+        <thead><tr><th>品項</th><th>可用庫存</th><th>活動暫存</th><th>最近更新</th><th>操作</th></tr></thead>
         <tbody>${g.itemIds.map(id=>{
           const f = stockMap.get(id);
           return `<tr>
             <td data-label="品項">${itemName(id)}</td>
             <td data-label="可用庫存">${filterStockEditMode ? `<input type="number" class="fs-edit-qty mini-input" data-item-id="${id}" min="0" step="1" value="${f.quantity}">` : f.quantity}</td>
             <td data-label="活動暫存">${filterEventHoldQty(id)}</td>
-            <td data-label="可下單">${f.orderable?'<span class="badge" style="background:var(--ok)">開放中</span>':'<span class="badge">未開放</span>'}</td>
+            <td data-label="最近更新">${fmtDT(new Date(f.updated_at).getTime())}</td>
             <td data-label="操作">
-              <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center;">
-                <button class="btn-outline" onclick="toggleFilterOrderable(${id}, ${!f.orderable})">${f.orderable?'關閉下單':'開放下單'}</button>
-                ${filterStockEditMode ? `<button class="btn-danger" onclick="deleteFilterStockItem(${id})">刪除</button>` : ''}
-              </div>
+              ${filterStockEditMode ? `<button class="btn-danger" onclick="deleteFilterStockItem(${id})">刪除</button>` : ''}
             </td>
           </tr>`;
         }).join('')}</tbody>
