@@ -460,6 +460,16 @@ function groupItemIdsByCategory(itemIds){
     itemIds: groups[c]
   }));
 }
+function itemSelectOptionsGrouped(items){
+  const groups = {};
+  items.forEach(it=>{ const c = it.category_code || ''; (groups[c] ||= []).push(it); });
+  const codes = [...CAT_ORDER, ''].filter(c=>groups[c] && groups[c].length);
+  return codes.map(c=>{
+    const label = c ? CAT_META[c].zh : '未分類';
+    const opts = groups[c].map(it=>`<option value="${it.id}">${it.name}</option>`).join('');
+    return `<optgroup label="${label}">${opts}</optgroup>`;
+  }).join('');
+}
 let itemViewMode = 'category';
 function itemCategoryOptions(selected){
   return `<option value="" ${!selected?'selected':''}>未分類</option>` +
@@ -874,7 +884,7 @@ function renderFilterStockTab(){
   el.innerHTML = `
     <div class="section">
       <h2>濾掛進貨登記</h2>
-      <div class="field"><label>品項</label><select id="frItem">${ITEMS.map(i=>`<option value="${i.id}">${i.name}</option>`).join('')}</select></div>
+      <div class="field"><label>品項</label><select id="frItem">${itemSelectOptionsGrouped(ITEMS)}</select></div>
       <div class="field"><label>進貨數量</label><input type="number" id="frQty" min="1" value="1"></div>
       <div class="field"><label>備註</label><input type="text" id="frNote"></div>
       <div class="field"><label>經手人姓名</label><input type="text" id="frName" placeholder="請輸入姓名"></div>
@@ -882,17 +892,7 @@ function renderFilterStockTab(){
     </div>
     <div class="section">
       <h2>濾掛總庫存</h2>
-      ${FILTER_STOCK_ALL.length ? `<table>
-        <thead><tr><th>品項</th><th>可用庫存</th><th>活動暫存</th><th>可下單</th><th></th></tr></thead>
-        <tbody>${FILTER_STOCK_ALL.map(f=>`
-          <tr>
-            <td data-label="品項">${itemName(f.item_id)}</td>
-            <td data-label="可用庫存">${f.quantity}</td>
-            <td data-label="活動暫存">${filterEventHoldQty(f.item_id)}</td>
-            <td data-label="可下單">${f.orderable?'<span class="badge" style="background:var(--ok)">開放中</span>':'<span class="badge">未開放</span>'}</td>
-            <td data-label=""><button class="btn-outline" onclick="toggleFilterOrderable(${f.item_id}, ${!f.orderable})">${f.orderable?'關閉下單':'開放下單'}</button></td>
-          </tr>`).join('')}</tbody>
-      </table>` : `<div class="empty-msg">尚無進貨紀錄，請先登記進貨</div>`}
+      ${renderFilterStockGrouped()}
     </div>
     <div class="section">
       <h2>待處理訂購申請（${pendingOrders.length}）</h2>
@@ -970,6 +970,33 @@ function filterEventHoldQty(itemId){
   return FILTER_EVENT_ITEMS.filter(li=>activeEventIds.has(li.event_id) && li.item_id===itemId)
     .reduce((s,li)=>s+Number(li.checked_out_qty),0);
 }
+// 沿用跟「濾掛總覽」相同的分類資料/順序/品項排序（groupItemIdsByCategory），
+// 不另建一套分類；庫存為0的品項也一併列出，方便人工登記進貨。
+function renderFilterStockGrouped(){
+  if (!FILTER_STOCK_ALL.length) return `<div class="empty-msg">尚無品項資料</div>`;
+  const stockMap = new Map(FILTER_STOCK_ALL.map(f=>[f.item_id, f]));
+  const orderedIds = ITEMS.map(i=>i.id).filter(id=>stockMap.has(id));
+  const groups = groupItemIdsByCategory(orderedIds);
+  return groups.map(g=>`
+    <details open style="margin-bottom:10px;border:1px solid var(--gray-08);border-radius:6px;overflow:hidden;">
+      <summary style="background:${g.meta.color};color:${g.meta.text};padding:9px 12px;font-weight:700;cursor:pointer;list-style:none;">
+        ${g.meta.zh}（${g.itemIds.length}）
+      </summary>
+      <table>
+        <thead><tr><th>品項</th><th>可用庫存</th><th>活動暫存</th><th>可下單</th><th></th></tr></thead>
+        <tbody>${g.itemIds.map(id=>{
+          const f = stockMap.get(id);
+          return `<tr>
+            <td data-label="品項">${itemName(id)}</td>
+            <td data-label="可用庫存">${f.quantity}</td>
+            <td data-label="活動暫存">${filterEventHoldQty(id)}</td>
+            <td data-label="可下單">${f.orderable?'<span class="badge" style="background:var(--ok)">開放中</span>':'<span class="badge">未開放</span>'}</td>
+            <td data-label=""><button class="btn-outline" onclick="toggleFilterOrderable(${id}, ${!f.orderable})">${f.orderable?'關閉下單':'開放下單'}</button></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </details>`).join('');
+}
 function renderFilterEventsSection(){
   const activeEvents = FILTER_EVENTS.filter(e=>e.status==='active');
   const closedEvents = FILTER_EVENTS.filter(e=>e.status==='closed');
@@ -1005,7 +1032,7 @@ function renderFilterEventsSection(){
 let filterEventRowCount = 0;
 function filterEventItemRowHtml(idx){
   return `<div class="alloc-row" data-row-idx="${idx}" style="display:flex;gap:4px;align-items:center;margin-bottom:4px;flex-wrap:wrap;">
-    <select class="fe-item">${ITEMS.map(i=>`<option value="${i.id}">${i.name}</option>`).join('')}</select>
+    <select class="fe-item">${itemSelectOptionsGrouped(ITEMS)}</select>
     <input type="number" class="fe-qty mini-input" min="1" step="1" value="1" style="width:70px;">
     <button class="btn-outline" onclick="this.closest('.alloc-row').remove()">✕</button>
   </div>`;
