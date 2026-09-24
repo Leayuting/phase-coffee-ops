@@ -225,6 +225,7 @@ function ageDaysOf(roastDateStr, nowMs){
 
 // ══════════ STATE ══════════
 let STORE_ID = null, STORE_NAME = '', STORE_ROLE = 'staff';
+let sessionLoginDate = null; // 台北在地日期字串（YYYY-MM-DD），用來偵測跨日以便每日午夜自動登出
 let CURRENT_TAB = 'retail';
 let STORES = [], ITEMS = [];
 let BATCHES = [], RETURNS = [], MY_TRANSFERS = [], OTHER_BATCHES = [], MY_RECEIPTS = [];
@@ -362,9 +363,19 @@ async function init(){
     renderStorePicker(null);
   }
 }
+function checkMidnightLogout(){
+  if (sessionLoginDate && todayStr() !== sessionLoginDate){
+    toast('已到隔日，自動登出');
+    logout();
+  }
+}
+document.addEventListener('visibilitychange', ()=>{
+  if (document.visibilityState === 'visible') checkMidnightLogout();
+});
 function enterStore(storeId, role){
   STORE_ID = storeId;
   STORE_ROLE = role || 'staff';
+  sessionLoginDate = todayStr();
   STORE_NAME = STORES.find(x=>x.id===storeId)?.name || storeId;
   document.getElementById('pickerRoot').style.display = 'none';
   document.getElementById('storeName').textContent = STORE_NAME + (STORE_ROLE==='viewer' ? '（檢視模式）' : '');
@@ -380,6 +391,7 @@ function enterStore(storeId, role){
   loadAll();
   subscribeRealtime();
   setInterval(()=>{
+    checkMidnightLogout();
     if (isEditingInput()) return;
     if (STORE_ROLE !== 'viewer') loadCounterName();
     render();
