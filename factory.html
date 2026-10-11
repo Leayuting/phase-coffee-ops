@@ -73,14 +73,27 @@ tr[data-item-id].dragging{opacity:.4;background:var(--gray-08);}
 /* 濾掛庫存管理：所有分類共用固定欄寬，不依品項名稱長度自動調整 */
 .filter-stock-table{table-layout:fixed;}
 .filter-stock-table th,.filter-stock-table td{vertical-align:middle;padding:9px 8px;font-size:13px;border-bottom:1px solid var(--gray-08);}
-.filter-stock-table th:nth-child(1),.filter-stock-table td:nth-child(1){width:40%;text-align:left;overflow-wrap:anywhere;}
-.filter-stock-table th:nth-child(2),.filter-stock-table td:nth-child(2){width:15%;text-align:center;}
-.filter-stock-table th:nth-child(3),.filter-stock-table td:nth-child(3){width:15%;text-align:center;}
-.filter-stock-table th:nth-child(4),.filter-stock-table td:nth-child(4){width:15%;text-align:center;}
-.filter-stock-table th:nth-child(5),.filter-stock-table td:nth-child(5){width:15%;text-align:center;}
+.filter-stock-table th:nth-child(1),.filter-stock-table td:nth-child(1){width:28%;text-align:left;overflow-wrap:anywhere;}
+.filter-stock-table th:nth-child(2),.filter-stock-table td:nth-child(2){width:14%;text-align:center;}
+.filter-stock-table th:nth-child(3),.filter-stock-table td:nth-child(3){width:14%;text-align:center;}
+.filter-stock-table th:nth-child(4),.filter-stock-table td:nth-child(4){width:14%;text-align:center;}
+.filter-stock-table th:nth-child(5),.filter-stock-table td:nth-child(5){width:16%;text-align:center;}
+.filter-stock-table th:nth-child(6),.filter-stock-table td:nth-child(6){width:14%;text-align:center;}
 .filter-stock-table .btn-outline{min-width:84px;height:30px;padding:0 8px;display:inline-flex;align-items:center;justify-content:center;}
 .filter-stock-table .badge{display:inline-block;min-width:56px;text-align:center;}
 .filter-stock-table input.fs-edit-qty{width:100%;max-width:72px;text-align:center;margin:0 auto;display:block;}
+/* 製作中／待到貨：品項/工廠/送製量/已到貨量/待到貨量/預計到貨日/狀態/操作，固定欄寬同上一組慣例 */
+.production-table{table-layout:fixed;}
+.production-table th,.production-table td{vertical-align:middle;padding:9px 8px;font-size:13px;border-bottom:1px solid var(--gray-08);}
+.production-table th:nth-child(1),.production-table td:nth-child(1){width:22%;text-align:left;overflow-wrap:anywhere;}
+.production-table th:nth-child(2),.production-table td:nth-child(2){width:12%;text-align:center;overflow-wrap:anywhere;}
+.production-table th:nth-child(3),.production-table td:nth-child(3){width:9%;text-align:center;}
+.production-table th:nth-child(4),.production-table td:nth-child(4){width:9%;text-align:center;}
+.production-table th:nth-child(5),.production-table td:nth-child(5){width:9%;text-align:center;}
+.production-table th:nth-child(6),.production-table td:nth-child(6){width:13%;text-align:center;}
+.production-table th:nth-child(7),.production-table td:nth-child(7){width:13%;text-align:center;}
+.production-table th:nth-child(8),.production-table td:nth-child(8){width:13%;text-align:center;}
+.production-table .btn-outline,.production-table .btn-danger{min-width:0;height:28px;padding:0 7px;font-size:11.5px;display:inline-flex;align-items:center;justify-content:center;margin:1px;}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:200;padding:16px;}
 .overlay.show{display:flex;}
 .modal{background:#fff;border-radius:14px;width:100%;max-width:420px;padding:20px;max-height:88vh;overflow:auto;}
@@ -93,33 +106,55 @@ tr[data-item-id].dragging{opacity:.4;background:var(--gray-08);}
 .modal-actions .btn,.modal-actions .btn-outline{flex:1;text-align:center;}
 @media (max-width:800px){
   .grid3{grid-template-columns:1fr;}
-  table:not(.filter-stock-table),thead:not(.filter-stock-table thead),tbody:not(.filter-stock-table tbody),tr:not(.filter-stock-table tr){display:block;}
-  th:not(.filter-stock-table th){display:none;}
-  td:not(.filter-stock-table td){display:flex;justify-content:space-between;align-items:center;gap:10px;border:none;padding:5px 0;text-align:right;}
-  td:not(.filter-stock-table td)::before{content:attr(data-label);color:var(--gray-50);font-size:11.5px;text-align:left;white-space:nowrap;}
-  tr:not(.filter-stock-table tr){border-bottom:1px solid var(--gray-10);padding:8px 0;}
+  table:not(.filter-stock-table):not(.production-table),thead:not(.filter-stock-table thead):not(.production-table thead),tbody:not(.filter-stock-table tbody):not(.production-table tbody),tr:not(.filter-stock-table tr):not(.production-table tr){display:block;}
+  th:not(.filter-stock-table th):not(.production-table th){display:none;}
+  td:not(.filter-stock-table td):not(.production-table td){display:flex;justify-content:space-between;align-items:center;gap:10px;border:none;padding:5px 0;text-align:right;}
+  td:not(.filter-stock-table td):not(.production-table td)::before{content:attr(data-label);color:var(--gray-50);font-size:11.5px;text-align:left;white-space:nowrap;}
+  tr:not(.filter-stock-table tr):not(.production-table tr){border-bottom:1px solid var(--gray-10);padding:8px 0;}
   header{padding:14px 16px;flex-wrap:wrap;}
   header .title{font-size:15px;}
   main{padding:12px;}
   .section{padding:13px;}
   .date-age{display:flex;flex-direction:column;align-items:flex-end;gap:2px;}
   .tabs{-webkit-mask-image:linear-gradient(to right,#000 92%,transparent 100%);mask-image:linear-gradient(to right,#000 92%,transparent 100%);}
-  /* 濾掛庫存管理：改成名稱/數量/狀態+操作三段式卡片，不用通用的逐欄堆疊 */
+  /* 濾掛庫存管理：改成名稱/三個數量/更新+操作四段式卡片，不用通用的逐欄堆疊 */
   .filter-stock-table{display:block;}
   .filter-stock-table thead{display:none;}
   .filter-stock-table tbody{display:block;}
   .filter-stock-table tr{
-    display:grid;grid-template-columns:1fr 1fr;
-    grid-template-areas:"name name" "qty1 qty2" "status action";
+    display:grid;grid-template-columns:1fr 1fr 1fr;
+    grid-template-areas:"name name name" "qty1 qty2 qty3" "updated updated action";
     gap:4px 10px;padding:10px 0;border-bottom:1px solid var(--gray-10);
   }
   .filter-stock-table td{padding:0;border:none;text-align:left;}
   .filter-stock-table td:nth-child(1){grid-area:name;font-weight:600;overflow-wrap:anywhere;}
   .filter-stock-table td:nth-child(2){grid-area:qty1;}
   .filter-stock-table td:nth-child(3){grid-area:qty2;}
-  .filter-stock-table td:nth-child(4){grid-area:status;}
-  .filter-stock-table td:nth-child(5){grid-area:action;text-align:right;}
-  .filter-stock-table td:nth-child(2)::before,.filter-stock-table td:nth-child(3)::before,.filter-stock-table td:nth-child(4)::before{
+  .filter-stock-table td:nth-child(4){grid-area:qty3;}
+  .filter-stock-table td:nth-child(5){grid-area:updated;}
+  .filter-stock-table td:nth-child(6){grid-area:action;text-align:right;}
+  .filter-stock-table td:nth-child(2)::before,.filter-stock-table td:nth-child(3)::before,.filter-stock-table td:nth-child(4)::before,.filter-stock-table td:nth-child(5)::before{
+    content:attr(data-label)"：";color:var(--gray-50);font-size:11px;display:block;
+  }
+  /* 製作中／待到貨：名稱/工廠+送製量/已到貨+待到貨/預計到貨日+狀態/操作五段式卡片 */
+  .production-table{display:block;}
+  .production-table thead{display:none;}
+  .production-table tbody{display:block;}
+  .production-table tr{
+    display:grid;grid-template-columns:1fr 1fr;
+    grid-template-areas:"name name" "factory qty" "arrived remaining" "expected status" "action action";
+    gap:4px 10px;padding:10px 0;border-bottom:1px solid var(--gray-10);
+  }
+  .production-table td{padding:0;border:none;text-align:left;}
+  .production-table td:nth-child(1){grid-area:name;font-weight:600;overflow-wrap:anywhere;}
+  .production-table td:nth-child(2){grid-area:factory;overflow-wrap:anywhere;}
+  .production-table td:nth-child(3){grid-area:qty;}
+  .production-table td:nth-child(4){grid-area:arrived;}
+  .production-table td:nth-child(5){grid-area:remaining;}
+  .production-table td:nth-child(6){grid-area:expected;}
+  .production-table td:nth-child(7){grid-area:status;}
+  .production-table td:nth-child(8){grid-area:action;display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-start;}
+  .production-table td:nth-child(2)::before,.production-table td:nth-child(3)::before,.production-table td:nth-child(4)::before,.production-table td:nth-child(5)::before,.production-table td:nth-child(6)::before,.production-table td:nth-child(7)::before{
     content:attr(data-label)"：";color:var(--gray-50);font-size:11px;display:block;
   }
 }
@@ -249,6 +284,8 @@ let STORES = [], ITEMS_ALL = [], ITEMS = [];
 let FILTER_STOCK_ALL = [];
 let filterStockEditMode = false, filterStockEditSnapshot = null;
 let FILTER_EVENTS = [], FILTER_EVENT_ITEMS = [];
+let FILTER_FACTORIES = [], FILTER_PRODUCTION_ORDERS = [], FILTER_PRODUCTION_ALLOCATIONS = [],
+    FILTER_PRODUCTION_ARRIVALS = [], FILTER_PRODUCTION_ARRIVAL_ITEMS = [];
 let FACTORY_PINS = [];
 let BATCHES = [], RETURNS = [], TRANSFERS = [];
 let ANNOUNCEMENTS = [], RECEIPTS = [];
@@ -356,9 +393,14 @@ async function loadAll(){
       sb.from('filter_stock').select('*').order('item_id'),
       sb.from('filter_events').select('*').order('created_at',{ascending:false}),
       sb.from('filter_event_items').select('*'),
-      sb.rpc('list_factory_pins')
+      sb.rpc('list_factory_pins'),
+      sb.from('filter_factories').select('*').order('name'),
+      sb.from('filter_production_orders').select('*').order('created_at',{ascending:false}),
+      sb.from('filter_production_allocations').select('*'),
+      sb.from('filter_production_arrivals').select('*').order('arrived_at',{ascending:false}),
+      sb.from('filter_production_arrival_items').select('*')
     );
-    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts},{data:signatures},{data:countLogs},cuppingBeansRes,cuppingParticipantsRes,cuppingSessionsRes,cuppingRoasteryStaffRes,filterStockRes,filterEventsRes,filterEventItemsRes,factoryPinsRes] = await Promise.all(queries);
+    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts},{data:signatures},{data:countLogs},cuppingBeansRes,cuppingParticipantsRes,cuppingSessionsRes,cuppingRoasteryStaffRes,filterStockRes,filterEventsRes,filterEventItemsRes,factoryPinsRes,filterFactoriesRes,filterProductionOrdersRes,filterProductionAllocationsRes,filterProductionArrivalsRes,filterProductionArrivalItemsRes] = await Promise.all(queries);
     STORES = stores || []; ITEMS_ALL = itemsAll || []; ITEMS = ITEMS_ALL.filter(i=>i.active);
     BATCHES = batches || []; RETURNS = returns || []; TRANSFERS = transfers || [];
     COUNT_LOGS = countLogs || [];
@@ -374,6 +416,11 @@ async function loadAll(){
     FILTER_EVENTS = (filterEventsRes && filterEventsRes.data) || [];
     FILTER_EVENT_ITEMS = (filterEventItemsRes && filterEventItemsRes.data) || [];
     FACTORY_PINS = (factoryPinsRes && factoryPinsRes.data) || [];
+    FILTER_FACTORIES = (filterFactoriesRes && filterFactoriesRes.data) || [];
+    FILTER_PRODUCTION_ORDERS = (filterProductionOrdersRes && filterProductionOrdersRes.data) || [];
+    FILTER_PRODUCTION_ALLOCATIONS = (filterProductionAllocationsRes && filterProductionAllocationsRes.data) || [];
+    FILTER_PRODUCTION_ARRIVALS = (filterProductionArrivalsRes && filterProductionArrivalsRes.data) || [];
+    FILTER_PRODUCTION_ARRIVAL_ITEMS = (filterProductionArrivalItemsRes && filterProductionArrivalItemsRes.data) || [];
     setSyncStatus('ok');
   }catch(e){ console.error(e); setSyncStatus('local'); }
   render();
@@ -400,7 +447,7 @@ document.addEventListener('focusout', ()=>{
 function subscribeRealtime(){
   const tables = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','counting_sessions'];
   if (CUPPING_ENABLED) tables.push('cupping_beans','cupping_participants','cupping_sessions','cupping_roastery_staff');
-  tables.push('filter_stock','filter_events','filter_event_items');
+  tables.push('filter_stock','filter_events','filter_event_items','filter_factories','filter_production_orders','filter_production_allocations','filter_production_arrivals','filter_production_arrival_items');
   const ch = sb.channel('factory-realtime');
   tables.forEach(t=>ch.on('postgres_changes',{event:'*',schema:'public',table:t}, scheduleReload));
   ch.subscribe(s=>{
@@ -925,6 +972,7 @@ function renderFilterStockTab(){
         </div>
       </details>
     </div>
+    ${renderFilterProductionSection()}
     <div class="section">
       <h2>工廠濾掛庫存
         <span>${filterStockEditMode
@@ -957,6 +1005,391 @@ async function deleteFilterStockItem(item_id){
   toast('已刪除濾掛品項'); loadAll();
 }
 
+// ── 濾掛送製／到貨（委託代工生產，分批到貨時才分配進一般庫存或指定活動） ──
+function factoryName(id){
+  const f = FILTER_FACTORIES.find(x=>x.id===id);
+  return f ? f.name : '—';
+}
+function filterFactoryOptions(){
+  const active = FILTER_FACTORIES.filter(f=>f.active);
+  if (!active.length) return `<option value="">（尚無代工廠，請先新增）</option>`;
+  return active.map(f=>`<option value="${f.id}">${f.name}</option>`).join('');
+}
+function filterEventOptionsForPicker(selectedId){
+  const activeEvents = FILTER_EVENTS.filter(e=>e.status==='active');
+  if (!activeEvents.length) return `<option value="">（尚無進行中的活動）</option>`;
+  return activeEvents.map(e=>`<option value="${e.id}" ${String(e.id)===String(selectedId)?'selected':''}>${e.name}</option>`).join('');
+}
+function productionAllocationLabel(a){
+  if (a.dest_type==='general') return '一般備貨';
+  const e = FILTER_EVENTS.find(x=>x.id===a.event_id);
+  return `活動：${e ? e.name : ('#'+a.event_id)}`;
+}
+function poFactoryManageHtml(){
+  const list = FILTER_FACTORIES.length
+    ? FILTER_FACTORIES.map(f=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12.5px;">
+          <span>${f.name}${f.active?'':'（已停用）'}</span>
+          <button class="btn-outline" onclick="toggleFilterFactoryActive(${f.id}, ${!f.active})">${f.active?'停用':'啟用'}</button>
+        </div>`).join('')
+    : `<div class="empty-msg" style="padding:4px 0;">尚無代工廠</div>`;
+  return `${list}
+    <div style="display:flex;gap:6px;margin-top:6px;">
+      <input type="text" id="poNewFactoryName" class="mini-input" style="flex:1;" placeholder="新代工廠名稱">
+      <button class="btn-sm" onclick="submitAddFilterFactory()">新增</button>
+    </div>`;
+}
+function togglePoFactoryManage(){
+  const el = document.getElementById('poFactoryManage');
+  if (el) el.style.display = el.style.display==='none' ? 'block' : 'none';
+}
+async function submitAddFilterFactory(){
+  const input = document.getElementById('poNewFactoryName');
+  const name = input.value.trim();
+  if (!name){ toast('請輸入代工廠名稱'); return; }
+  await guardSubmit('submitAddFilterFactory', async ()=>{
+    const { data, error } = await sb.rpc('add_filter_factory', { p_name:name });
+    if (error){ toast(error.code==='23505' ? '這個代工廠名稱已經存在' : '新增失敗：'+error.message); return; }
+    FILTER_FACTORIES.push({ id:data, name, active:true, created_at:new Date().toISOString() });
+    const sel = document.getElementById('poFactory');
+    if (sel){ sel.insertAdjacentHTML('beforeend', `<option value="${data}">${name}</option>`); sel.value = String(data); }
+    const manageDiv = document.getElementById('poFactoryManage');
+    if (manageDiv) manageDiv.innerHTML = poFactoryManageHtml();
+    toast('已新增代工廠並選取');
+  });
+}
+async function toggleFilterFactoryActive(id, active){
+  const { error } = await sb.rpc('set_filter_factory_active', { p_id:id, p_active:active });
+  if (error){ toast('更新失敗：'+error.message); return; }
+  const f = FILTER_FACTORIES.find(x=>x.id===id);
+  if (f) f.active = active;
+  const manageDiv = document.getElementById('poFactoryManage');
+  if (manageDiv) manageDiv.innerHTML = poFactoryManageHtml();
+  const sel = document.getElementById('poFactory');
+  if (sel && !active && sel.value === String(id)) sel.innerHTML = filterFactoryOptions();
+  toast(active ? '已啟用' : '已停用');
+}
+
+function productionOrderRow(o){
+  const remaining = o.quantity - o.arrived_qty - o.cancelled_qty;
+  const statusHtml = {
+    producing: '<span class="status-pill status-pending">製作中</span>',
+    partial: '<span class="status-pill status-approved">部分到貨</span>',
+    arrived: '<span class="status-pill status-decided">已到貨</span>',
+    cancelled: '<span class="status-pill status-rejected">已取消</span>'
+  }[o.status] || o.status;
+  return `<tr>
+    <td data-label="品項">${itemName(o.item_id)}</td>
+    <td data-label="工廠">${factoryName(o.factory_id)}</td>
+    <td data-label="送製量">${o.quantity}</td>
+    <td data-label="已到貨量">${o.arrived_qty}</td>
+    <td data-label="待到貨量">${remaining}</td>
+    <td data-label="預計到貨日">${o.expected_arrival_date || '—'}</td>
+    <td data-label="狀態">${statusHtml}</td>
+    <td data-label="操作">
+      <button class="btn-outline" onclick="viewProductionOrderDetail(${o.id})">明細</button>
+      ${remaining>0 ? `<button class="btn-sm" onclick="openReceiveProductionModal(${o.id})">到貨</button>` : ''}
+    </td>
+  </tr>`;
+}
+function renderFilterProductionSection(){
+  const active = FILTER_PRODUCTION_ORDERS.filter(o=>o.status==='producing'||o.status==='partial');
+  const historical = FILTER_PRODUCTION_ORDERS.filter(o=>o.status==='arrived'||o.status==='cancelled');
+  const head = `<tr><th>品項</th><th>工廠</th><th>送製量</th><th>已到貨量</th><th>待到貨量</th><th>預計到貨日</th><th>狀態</th><th>操作</th></tr>`;
+  return `
+    <div class="section">
+      <h2>製作中／待到貨<button class="btn-sm" onclick="openCreateProductionOrderModal()">＋ 新增送製</button></h2>
+      ${active.length ? `<table class="production-table">
+        <thead>${head}</thead>
+        <tbody>${active.map(productionOrderRow).join('')}</tbody>
+      </table>` : `<div class="empty-msg">目前沒有製作中或待到貨的送製單</div>`}
+      ${historical.length ? `<details style="margin-top:10px;">
+        <summary style="cursor:pointer;color:var(--gray-70);font-size:13px;">已完成／已取消送製單（${historical.length}）</summary>
+        <table class="production-table" style="margin-top:8px;">
+          <thead>${head}</thead>
+          <tbody>${historical.map(productionOrderRow).join('')}</tbody>
+        </table>
+      </details>` : ''}
+    </div>`;
+}
+function poAllocRowHtml(destType, eventId, qty){
+  return `<div class="alloc-row po-alloc-row" style="display:flex;gap:4px;align-items:center;margin-bottom:4px;flex-wrap:wrap;">
+    <select class="po-alloc-dest" onchange="poAllocDestChanged(this)">
+      <option value="general" ${destType==='general'?'selected':''}>一般備貨</option>
+      <option value="event" ${destType==='event'?'selected':''}>指定活動</option>
+    </select>
+    <span class="po-alloc-event-wrap" style="display:${destType==='event'?'inline-flex':'none'};gap:4px;align-items:center;">
+      <select class="po-alloc-event">${filterEventOptionsForPicker(eventId)}</select>
+      <button class="btn-outline" onclick="togglePoInlineNewEvent(this)">＋新增活動</button>
+    </span>
+    <input type="number" class="po-alloc-qty mini-input" min="1" step="1" value="${qty||1}" oninput="updatePoAllocTotal()">
+    <button class="btn-outline" onclick="this.closest('.po-alloc-row').remove(); updatePoAllocTotal();">✕</button>
+    <div class="po-inline-new-event" style="display:none;flex-basis:100%;gap:4px;margin-top:4px;">
+      <input type="text" class="po-new-event-name mini-input" placeholder="活動名稱" style="width:120px;">
+      <input type="date" class="po-new-event-end" style="width:120px;">
+      <button class="btn-sm" onclick="submitPoInlineNewEvent(this)">建立</button>
+    </div>
+  </div>`;
+}
+function poAllocDestChanged(sel){
+  const row = sel.closest('.po-alloc-row');
+  row.querySelector('.po-alloc-event-wrap').style.display = sel.value==='event' ? 'inline-flex' : 'none';
+  updatePoAllocTotal();
+}
+function togglePoInlineNewEvent(btn){
+  const div = btn.closest('.po-alloc-row').querySelector('.po-inline-new-event');
+  div.style.display = div.style.display==='none' ? 'flex' : 'none';
+}
+async function submitPoInlineNewEvent(btn){
+  const row = btn.closest('.po-alloc-row');
+  const name = row.querySelector('.po-new-event-name').value.trim();
+  const endDate = row.querySelector('.po-new-event-end').value;
+  if (!name){ toast('請輸入活動名稱'); return; }
+  if (!endDate){ toast('請輸入活動結束日期'); return; }
+  const handledByEl = document.getElementById('poCreatedBy');
+  const handled_by = handledByEl ? handledByEl.value.trim() : '';
+  if (!handled_by){ toast('請先在上面填寫經手人，再就地新增活動'); return; }
+  await guardSubmit('submitPoInlineNewEvent', async ()=>{
+    const { data, error } = await sb.rpc('create_filter_event', { p_name:name, p_items:[], p_handled_by:handled_by, p_end_date:endDate });
+    if (error){ toast('新增活動失敗：'+error.message); return; }
+    FILTER_EVENTS.push({ id:data, name, status:'active', handled_by, note:null, end_date:endDate, created_at:new Date().toISOString() });
+    document.querySelectorAll('.po-alloc-event').forEach(sel=>{
+      sel.insertAdjacentHTML('beforeend', `<option value="${data}">${name}</option>`);
+    });
+    row.querySelector('.po-alloc-event').value = String(data);
+    row.querySelector('.po-inline-new-event').style.display = 'none';
+    row.querySelector('.po-new-event-name').value = '';
+    row.querySelector('.po-new-event-end').value = '';
+    toast('已新增活動並選取');
+  });
+}
+function updatePoAllocTotal(){
+  const rows = document.querySelectorAll('.po-alloc-qty');
+  const el = document.getElementById('poAllocTotal');
+  if (!el) return;
+  if (!rows.length){ el.textContent = ''; return; }
+  const target = Number(document.getElementById('poQuantity')?.value || 0);
+  let sum = 0;
+  rows.forEach(inp=>{ sum += Number(inp.value||0); });
+  const ok = sum === target && target > 0;
+  el.textContent = `已分配 ${sum} / 送製數量 ${target}`;
+  el.style.color = ok ? 'var(--ok)' : 'var(--danger)';
+  el.style.fontWeight = '600';
+}
+function openCreateProductionOrderModal(){
+  const today = todayStr();
+  openModal(`
+    <h3>新增送製</h3>
+    <div class="field"><label>品項</label><select id="poItem">${itemSelectOptionsGrouped(ITEMS)}</select></div>
+    <div class="field"><label>工廠</label>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <select id="poFactory" style="flex:1;">${filterFactoryOptions()}</select>
+        <button class="btn-outline" onclick="togglePoFactoryManage()">管理代工廠</button>
+      </div>
+      <div id="poFactoryManage" style="display:none;margin-top:8px;padding:8px;background:var(--gray-08);border-radius:6px;">
+        ${poFactoryManageHtml()}
+      </div>
+    </div>
+    <div class="field"><label>送製數量</label><input type="number" id="poQuantity" min="1" step="1" value="1" oninput="updatePoAllocTotal()"></div>
+    <div class="field"><label>送製日期</label><input type="date" id="poSubmittedDate" value="${today}"></div>
+    <div class="field"><label>預計到貨日（選填）</label><input type="date" id="poExpectedDate"></div>
+    <div class="field"><label>經手人</label><input type="text" id="poCreatedBy" placeholder="請輸入姓名"></div>
+    <div class="field"><label>備註（選填）</label><input type="text" id="poNote"></div>
+    <details id="poAllocDetails">
+      <summary style="cursor:pointer;font-weight:700;font-size:13px;">活動預留設定（預設全部一般備貨，展開才需要指定活動）</summary>
+      <div style="margin-top:8px;">
+        <div id="poAllocRows"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+          <button class="btn-outline" onclick="document.getElementById('poAllocRows').insertAdjacentHTML('beforeend', poAllocRowHtml('general', null, 1)); updatePoAllocTotal();">＋ 加入一筆分配</button>
+          <span id="poAllocTotal"></span>
+        </div>
+      </div>
+    </details>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="submitCreateProductionOrder()">送出</button>
+    </div>`);
+}
+async function submitCreateProductionOrder(){
+  const item_id = Number(document.getElementById('poItem').value);
+  const factory_id = Number(document.getElementById('poFactory').value);
+  if (!factory_id){ toast('請先新增並選擇代工廠'); return; }
+  const qtyStr = document.getElementById('poQuantity').value.trim();
+  if (!/^\d+$/.test(qtyStr) || Number(qtyStr)<=0){ toast('送製數量必須是大於 0 的整數'); return; }
+  const quantity = Number(qtyStr);
+  const submitted_date = document.getElementById('poSubmittedDate').value;
+  if (!submitted_date){ toast('請輸入送製日期'); return; }
+  const expected_arrival_date = document.getElementById('poExpectedDate').value || null;
+  const created_by = document.getElementById('poCreatedBy').value.trim();
+  if (!created_by){ toast('請輸入經手人'); return; }
+  const note = document.getElementById('poNote').value.trim() || null;
+
+  const rows = Array.from(document.querySelectorAll('.po-alloc-row'));
+  let allocations;
+  if (!rows.length){
+    allocations = [{ dest_type:'general', event_id:null, qty:quantity }];
+  } else {
+    allocations = [];
+    for (const row of rows){
+      const dest_type = row.querySelector('.po-alloc-dest').value;
+      const qty = Number(row.querySelector('.po-alloc-qty').value || 0);
+      if (!qty || qty<=0 || qty!==Math.trunc(qty)){ toast('分配數量必須是大於 0 的整數'); return; }
+      let event_id = null;
+      if (dest_type === 'event'){
+        event_id = Number(row.querySelector('.po-alloc-event').value);
+        if (!event_id){ toast('請選擇活動，或就地新增一個'); return; }
+      }
+      allocations.push({ dest_type, event_id, qty });
+    }
+    const sum = allocations.reduce((s,a)=>s+a.qty,0);
+    if (sum !== quantity){ toast(`用途分配總量 ${sum} 須等於送製數量 ${quantity}`); return; }
+  }
+
+  await guardSubmit('submitCreateProductionOrder', async ()=>{
+    const { error } = await sb.rpc('create_filter_production_order', {
+      p_item_id:item_id, p_factory_id:factory_id, p_quantity:quantity,
+      p_submitted_date:submitted_date, p_expected_arrival_date:expected_arrival_date,
+      p_note:note, p_created_by:created_by, p_allocations:allocations
+    });
+    if (error){ toast('新增送製失敗：'+error.message); return; }
+    closeModal(); toast('已新增送製單'); loadAll();
+  });
+}
+function openReceiveProductionModal(orderId){
+  const o = FILTER_PRODUCTION_ORDERS.find(x=>x.id===orderId);
+  if (!o) return;
+  const allocs = FILTER_PRODUCTION_ALLOCATIONS.filter(a=>a.production_order_id===orderId)
+    .filter(a=>(a.planned_qty - a.arrived_qty - a.cancelled_qty) > 0);
+  if (!allocs.length){ toast('這張送製單沒有待到貨的分配'); return; }
+  openModal(`
+    <h3>登記到貨｜${itemName(o.item_id)}</h3>
+    <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">預填各用途目前的待到貨量，可調低做部分到貨；本次到貨總量須等於下方分配加總。</p>
+    <div id="rfpRows">${allocs.map(a=>{
+      const remaining = a.planned_qty - a.arrived_qty - a.cancelled_qty;
+      return `<div class="item-block" data-alloc-id="${a.id}" data-remaining="${remaining}">
+        <div class="item-block-title">${productionAllocationLabel(a)}（待到貨 ${remaining}）</div>
+        <div class="field"><label>本次到貨數量</label><input type="number" class="rfp-qty" min="0" max="${remaining}" value="${remaining}" oninput="updateRfpTotal()"></div>
+      </div>`;
+    }).join('')}</div>
+    <div style="text-align:right;font-size:12.5px;font-weight:600;margin-bottom:8px;" id="rfpTotal"></div>
+    <div class="field"><label>經手人</label><input type="text" id="rfpReceivedBy" placeholder="請輸入姓名"></div>
+    <div class="field"><label>備註（選填）</label><input type="text" id="rfpNote"></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="confirmReceiveProduction(${orderId})">確認到貨</button>
+    </div>`);
+  updateRfpTotal();
+}
+function updateRfpTotal(){
+  const blocks = Array.from(document.querySelectorAll('#rfpRows .item-block'));
+  let sum = 0;
+  blocks.forEach(b=>{
+    const input = b.querySelector('.rfp-qty');
+    let v = Number(input.value);
+    const max = Number(b.dataset.remaining);
+    if (isNaN(v) || v<0) v = 0;
+    if (v>max) v = max;
+    input.value = v;
+    sum += v;
+  });
+  const el = document.getElementById('rfpTotal');
+  if (el) el.textContent = `本次到貨總量：${sum}`;
+}
+async function confirmReceiveProduction(orderId){
+  const received_by = document.getElementById('rfpReceivedBy').value.trim();
+  if (!received_by){ toast('請輸入經手人'); return; }
+  const note = document.getElementById('rfpNote').value.trim() || null;
+  const blocks = Array.from(document.querySelectorAll('#rfpRows .item-block'));
+  const items = [];
+  blocks.forEach(b=>{
+    const qty = Number(b.querySelector('.rfp-qty').value || 0);
+    if (qty > 0) items.push({ allocation_id: Number(b.dataset.allocId), qty });
+  });
+  if (!items.length){ toast('本次到貨總量必須大於 0'); return; }
+  await guardSubmit('confirmReceiveProduction', async ()=>{
+    const { error } = await sb.rpc('receive_filter_production', { p_order_id:orderId, p_received_by:received_by, p_note:note, p_items:items });
+    if (error){ toast('登記到貨失敗：'+error.message); return; }
+    closeModal(); toast('已登記到貨'); loadAll();
+  });
+}
+function viewProductionOrderDetail(orderId){
+  const o = FILTER_PRODUCTION_ORDERS.find(x=>x.id===orderId);
+  if (!o) return;
+  const allocs = FILTER_PRODUCTION_ALLOCATIONS.filter(a=>a.production_order_id===orderId);
+  const arrivals = FILTER_PRODUCTION_ARRIVALS.filter(a=>a.production_order_id===orderId).sort((a,b)=>new Date(b.arrived_at)-new Date(a.arrived_at));
+  openModal(`
+    <h3>送製單明細｜${itemName(o.item_id)}</h3>
+    <div class="field"><label>工廠／送製日期／經手人</label><div>${factoryName(o.factory_id)}・${o.submitted_date}・${o.created_by||'—'}</div></div>
+    ${o.note ? `<div class="field"><label>備註</label><div>${o.note}</div></div>` : ''}
+    <table>
+      <thead><tr><th>用途</th><th>計畫量</th><th>已到貨</th><th>已取消</th><th>待到貨</th><th>操作</th></tr></thead>
+      <tbody>${allocs.map(a=>{
+        const remaining = a.planned_qty - a.arrived_qty - a.cancelled_qty;
+        return `<tr>
+          <td data-label="用途">${productionAllocationLabel(a)}</td>
+          <td data-label="計畫量">${a.planned_qty}</td>
+          <td data-label="已到貨">${a.arrived_qty}</td>
+          <td data-label="已取消">${a.cancelled_qty}</td>
+          <td data-label="待到貨">${remaining}</td>
+          <td data-label="操作">${remaining>0 ? `
+            <button class="btn-outline" onclick="confirmCancelProductionAllocation(${a.id})">取消剩餘</button>
+            <button class="btn-outline" onclick="openReassignAllocationModal(${a.id})">改分配</button>` : '—'}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>
+    ${arrivals.length ? `<div class="field" style="margin-top:10px;"><label>到貨歷程</label></div>
+    <table>
+      <thead><tr><th>到貨時間</th><th>數量</th><th>經手人</th><th>備註</th></tr></thead>
+      <tbody>${arrivals.map(a=>`<tr>
+        <td data-label="到貨時間">${fmtDT(new Date(a.arrived_at).getTime())}</td>
+        <td data-label="數量">${a.total_qty}</td>
+        <td data-label="經手人">${a.received_by||'—'}</td>
+        <td data-label="備註">${a.note||'—'}</td>
+      </tr>`).join('')}</tbody>
+    </table>` : ''}
+    <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">關閉</button></div>`);
+}
+async function confirmCancelProductionAllocation(allocId){
+  if (!confirm('確定要取消這筆分配尚未到貨的剩餘數量嗎？已到貨的部分不受影響，取消後無法復原，但送製單歷史紀錄會保留。')) return;
+  const { error } = await sb.rpc('cancel_filter_production_allocation_remaining', { p_allocation_id: allocId });
+  if (error){ toast('取消失敗：'+error.message); return; }
+  closeModal(); toast('已取消剩餘數量'); loadAll();
+}
+function openReassignAllocationModal(allocId){
+  const a = FILTER_PRODUCTION_ALLOCATIONS.find(x=>x.id===allocId);
+  if (!a) return;
+  const remaining = a.planned_qty - a.arrived_qty - a.cancelled_qty;
+  openModal(`
+    <h3>改分配（剩餘 ${remaining}）</h3>
+    <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">把這筆分配尚未到貨的數量改分配到別的用途，原分配的歷史紀錄會保留。</p>
+    <div class="field"><label>新用途</label>
+      <select id="reaDest" onchange="document.getElementById('reaEventWrap').style.display=this.value==='event'?'block':'none';">
+        <option value="general">一般備貨</option>
+        <option value="event">指定活動</option>
+      </select>
+    </div>
+    <div id="reaEventWrap" style="display:none;">
+      <div class="field"><label>活動</label><select id="reaEvent">${filterEventOptionsForPicker(null)}</select></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="confirmReassignAllocation(${allocId})">確認改分配</button>
+    </div>`);
+}
+async function confirmReassignAllocation(allocId){
+  const dest = document.getElementById('reaDest').value;
+  let eventId = null;
+  if (dest === 'event'){
+    eventId = Number(document.getElementById('reaEvent').value);
+    if (!eventId){ toast('請選擇活動'); return; }
+  }
+  await guardSubmit('confirmReassignAllocation', async ()=>{
+    const { error } = await sb.rpc('reassign_filter_production_allocation_remaining', { p_allocation_id:allocId, p_new_dest_type:dest, p_new_event_id:eventId });
+    if (error){ toast('改分配失敗：'+error.message); return; }
+    closeModal(); toast('已改分配'); loadAll();
+  });
+}
+
 // ── 濾掛活動庫存（領用／盤點結案，庫存移轉不重複增加總庫存） ──
 function filterEventHoldQty(itemId){
   const activeEventIds = new Set(FILTER_EVENTS.filter(e=>e.status==='active').map(e=>e.id));
@@ -976,13 +1409,15 @@ function renderFilterStockGrouped(){
         ${g.meta.zh}（${g.itemIds.length}）
       </summary>
       <table class="filter-stock-table">
-        <thead><tr><th>品項</th><th>可用庫存</th><th>活動暫存</th><th>最近更新</th><th>操作</th></tr></thead>
+        <thead><tr><th>品項</th><th>實體總量</th><th>活動預留量</th><th>一般可用量</th><th>最近更新</th><th>操作</th></tr></thead>
         <tbody>${g.itemIds.map(id=>{
           const f = stockMap.get(id);
+          const held = filterEventHoldQty(id);
           return `<tr>
             <td data-label="品項">${itemName(id)}</td>
-            <td data-label="可用庫存">${filterStockEditMode ? `<input type="number" class="fs-edit-qty mini-input" data-item-id="${id}" min="0" step="1" value="${f.quantity}">` : f.quantity}</td>
-            <td data-label="活動暫存">${filterEventHoldQty(id)}</td>
+            <td data-label="實體總量">${Number(f.quantity) + held}</td>
+            <td data-label="活動預留量">${held}</td>
+            <td data-label="一般可用量">${filterStockEditMode ? `<input type="number" class="fs-edit-qty mini-input" data-item-id="${id}" min="0" step="1" value="${f.quantity}">` : f.quantity}</td>
             <td data-label="最近更新">${fmtDT(new Date(f.updated_at).getTime())}</td>
             <td data-label="操作">
               ${filterStockEditMode ? `<button class="btn-danger" onclick="deleteFilterStockItem(${id})">刪除</button>` : ''}
@@ -1042,6 +1477,15 @@ async function saveFilterStockEdit(){
     loadAll();
   });
 }
+function filterEventStatusBadge(e){
+  if (e.status === 'closed') return '<span class="status-pill status-decided">已結案</span>';
+  const today = todayStr();
+  if (e.end_date && e.end_date <= today) return '<span class="status-pill status-pending">待盤點</span>';
+  return '<span class="status-pill status-approved">進行中</span>';
+}
+function diffReasonLabel(r){
+  return { used:'活動使用', damaged:'耗損', adjustment:'盤點調整', increase_other:'異常增加' }[r] || '—';
+}
 function renderFilterEventsSection(){
   const activeEvents = FILTER_EVENTS.filter(e=>e.status==='active');
   const closedEvents = FILTER_EVENTS.filter(e=>e.status==='closed');
@@ -1051,7 +1495,7 @@ function renderFilterEventsSection(){
     return `<tr>
       <td data-label="活動名稱">${e.name}</td>
       <td data-label="領用總數">${total}</td>
-      <td data-label="狀態">${e.status==='active'?'<span class="status-pill status-pending">進行中</span>':'<span class="status-pill status-decided">已結案</span>'}</td>
+      <td data-label="狀態">${filterEventStatusBadge(e)}</td>
       <td data-label="" style="white-space:nowrap;">
         <button class="btn-outline" onclick="viewFilterEventDetail(${e.id})">查看明細</button>
         ${e.status==='active' ? `<button class="btn-sm" onclick="openCloseFilterEventModal(${e.id})">盤點結案</button>` : ''}
@@ -1083,12 +1527,13 @@ function filterEventItemRowHtml(idx){
   </div>`;
 }
 function openCreateFilterEventModal(){
-  filterEventRowCount = 1;
+  filterEventRowCount = 0;
   openModal(`
     <h3>新增活動</h3>
     <div class="field"><label>活動名稱</label><input type="text" id="feName" placeholder="例如：中秋門市試飲活動"></div>
-    <div class="field"><label>領用品項</label>
-      <div id="feItemRows">${filterEventItemRowHtml(0)}</div>
+    <div class="field"><label>結束日期</label><input type="date" id="feEndDate"></div>
+    <div class="field"><label>領用品項（選填，之後也可以再從一般庫存圈存，或透過送製到貨時直接分配進來）</label>
+      <div id="feItemRows"></div>
       <button class="btn-outline" style="margin-top:4px;" onclick="document.getElementById('feItemRows').insertAdjacentHTML('beforeend', filterEventItemRowHtml(filterEventRowCount++))">＋ 加入品項</button>
     </div>
     <div class="field"><label>經手人</label><input type="text" id="feHandledBy" placeholder="請輸入姓名"></div>
@@ -1100,12 +1545,13 @@ function openCreateFilterEventModal(){
 }
 async function saveFilterEvent(){
   const name = document.getElementById('feName').value.trim();
+  const end_date = document.getElementById('feEndDate').value;
   const handled_by = document.getElementById('feHandledBy').value.trim();
   const note = document.getElementById('feNote').value.trim() || null;
   if (!name){ toast('請輸入活動名稱'); return; }
+  if (!end_date){ toast('請輸入活動結束日期'); return; }
   if (!handled_by){ toast('請輸入經手人'); return; }
   const rows = Array.from(document.querySelectorAll('#feItemRows .alloc-row'));
-  if (!rows.length){ toast('請至少加入一個品項'); return; }
   const items = [];
   for (const row of rows){
     const item_id = Number(row.querySelector('.fe-item').value);
@@ -1114,50 +1560,136 @@ async function saveFilterEvent(){
     items.push({ item_id, qty });
   }
   await guardSubmit('saveFilterEvent', async ()=>{
-    const { error } = await sb.rpc('create_filter_event', { p_name:name, p_items:items, p_handled_by:handled_by, p_note:note });
+    const { error } = await sb.rpc('create_filter_event', { p_name:name, p_items:items, p_handled_by:handled_by, p_note:note, p_end_date:end_date });
     if (error){ toast('新增失敗：'+error.message); return; }
-    closeModal(); toast('已新增活動並轉入活動暫存'); loadAll();
+    closeModal(); toast('已新增活動'); loadAll();
   });
 }
 function viewFilterEventDetail(eventId){
   const e = FILTER_EVENTS.find(x=>x.id===eventId);
   if (!e) return;
   const lines = FILTER_EVENT_ITEMS.filter(li=>li.event_id===eventId);
+  const pendingAllocs = FILTER_PRODUCTION_ALLOCATIONS.filter(a=>a.dest_type==='event' && a.event_id===eventId);
+  const pendingQty = pendingAllocs.reduce((s,a)=>s+Math.max(0, a.planned_qty-a.arrived_qty-a.cancelled_qty),0);
   openModal(`
     <h3>活動明細｜${e.name}</h3>
     <div class="field"><label>經手人／建立時間</label><div>${e.handled_by||'—'}・${fmtDT(new Date(e.created_at).getTime())}</div></div>
+    <div class="field"><label>結束日期</label><div>${e.end_date||'—'}</div></div>
     ${e.note ? `<div class="field"><label>備註</label><div>${e.note}</div></div>` : ''}
     <table>
-      <thead><tr><th>品項</th><th>領用</th>${e.status==='closed'?'<th>退回</th><th>使用量</th><th>備註</th>':''}</tr></thead>
+      <thead><tr><th>品項</th><th>已預留可用量</th>${e.status==='closed'?'<th>退回</th><th>使用量</th><th>差額原因</th><th>備註</th>':'<th>操作</th>'}</tr></thead>
       <tbody>${lines.map(li=>`
         <tr>
           <td data-label="品項">${itemName(li.item_id)}</td>
-          <td data-label="領用">${li.checked_out_qty}</td>
-          ${e.status==='closed'?`<td data-label="退回">${li.returned_qty}</td><td data-label="使用量">${li.used_qty}</td><td data-label="備註">${li.note||'—'}</td>`:''}
+          <td data-label="已預留可用量">${li.checked_out_qty}</td>
+          ${e.status==='closed'
+            ? `<td data-label="退回">${li.returned_qty}</td><td data-label="使用量">${li.used_qty}</td><td data-label="差額原因">${diffReasonLabel(li.diff_reason)}</td><td data-label="備註">${li.note||'—'}</td>`
+            : `<td data-label="操作"><button class="btn-outline" onclick="promptReleaseEventReservation(${li.id}, ${li.checked_out_qty})">解除預留</button></td>`}
         </tr>`).join('')}</tbody>
     </table>
+    ${pendingQty>0 ? `<div class="field" style="margin-top:8px;color:var(--danger);font-size:12.5px;">送製中待到貨量：${pendingQty}（尚未到貨，結案前需先在「製作中／待到貨」清單取消剩餘或改分配）</div>` : ''}
+    ${e.status==='active' ? `
+    <details style="margin-top:10px;">
+      <summary style="cursor:pointer;font-weight:700;font-size:13px;">＋ 從一般庫存圈存</summary>
+      <div style="margin-top:8px;">
+        <div class="field"><label>品項</label><select id="resItem">${itemSelectOptionsGrouped(ITEMS)}</select></div>
+        <div class="field"><label>數量</label><input type="number" id="resQty" min="1" step="1" value="1"></div>
+        <div class="field"><label>經手人</label><input type="text" id="resHandledBy" placeholder="請輸入姓名"></div>
+        <button class="btn" onclick="submitReserveMoreForEvent(${eventId})">確認圈存</button>
+      </div>
+    </details>` : ''}
     ${e.status==='closed' ? `<div class="field" style="margin-top:10px;"><label>結案人／結案時間</label><div>${e.closed_by||'—'}・${fmtDT(new Date(e.closed_at).getTime())}</div></div>${e.closed_note?`<div class="field"><label>結案備註</label><div>${e.closed_note}</div></div>`:''}` : ''}
-    <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">關閉</button></div>`);
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">關閉</button>
+      ${e.status==='active' ? `<button class="btn" onclick="openCloseFilterEventModal(${eventId})">盤點結案</button>` : ''}
+    </div>`);
+}
+async function submitReserveMoreForEvent(eventId){
+  const item_id = Number(document.getElementById('resItem').value);
+  const qtyStr = document.getElementById('resQty').value.trim();
+  if (!/^\d+$/.test(qtyStr) || Number(qtyStr)<=0){ toast('圈存數量必須是大於 0 的整數'); return; }
+  const handled_by = document.getElementById('resHandledBy').value.trim();
+  if (!handled_by){ toast('請輸入經手人'); return; }
+  await guardSubmit('submitReserveMoreForEvent', async ()=>{
+    const { error } = await sb.rpc('reserve_filter_stock_for_event', { p_event_id:eventId, p_item_id:item_id, p_qty:Number(qtyStr), p_handled_by:handled_by });
+    if (error){ toast('圈存失敗：'+error.message); return; }
+    closeModal(); toast('已從一般庫存圈存'); loadAll();
+  });
+}
+function promptReleaseEventReservation(eventItemId, checkedOut){
+  openModal(`
+    <h3>解除預留</h3>
+    <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">目前已預留 ${checkedOut}，解除後會退回一般可用庫存。</p>
+    <div class="field"><label>解除數量</label><input type="number" id="relQty" min="1" max="${checkedOut}" step="1" value="${checkedOut}"></div>
+    <div class="field"><label>經手人</label><input type="text" id="relHandledBy" placeholder="請輸入姓名"></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="confirmReleaseEventReservation(${eventItemId})">確認解除</button>
+    </div>`);
+}
+async function confirmReleaseEventReservation(eventItemId){
+  const qtyStr = document.getElementById('relQty').value.trim();
+  if (!/^\d+$/.test(qtyStr) || Number(qtyStr)<=0){ toast('解除數量必須是大於 0 的整數'); return; }
+  const handled_by = document.getElementById('relHandledBy').value.trim();
+  if (!handled_by){ toast('請輸入經手人'); return; }
+  await guardSubmit('confirmReleaseEventReservation', async ()=>{
+    const { error } = await sb.rpc('release_filter_event_reservation', { p_event_item_id:eventItemId, p_qty:Number(qtyStr), p_handled_by:handled_by });
+    if (error){ toast('解除失敗：'+error.message); return; }
+    closeModal(); toast('已解除預留'); loadAll();
+  });
 }
 function openCloseFilterEventModal(eventId){
   const e = FILTER_EVENTS.find(x=>x.id===eventId);
   if (!e) return;
+  const pendingAllocs = FILTER_PRODUCTION_ALLOCATIONS.filter(a=>a.dest_type==='event' && a.event_id===eventId && (a.planned_qty-a.arrived_qty-a.cancelled_qty)>0);
+  if (pendingAllocs.length){
+    openModal(`
+      <h3>盤點結案｜${e.name}</h3>
+      <p style="color:var(--gray-50);font-size:12.5px;margin-bottom:10px;">此活動還有 ${pendingAllocs.length} 筆送製分配尚未到貨，請先取消剩餘或改分配到別處，才能繼續盤點結案。</p>
+      <table>
+        <thead><tr><th>品項</th><th>待到貨量</th><th>操作</th></tr></thead>
+        <tbody>${pendingAllocs.map(a=>{
+          const order = FILTER_PRODUCTION_ORDERS.find(o=>o.id===a.production_order_id);
+          const remaining = a.planned_qty - a.arrived_qty - a.cancelled_qty;
+          return `<tr>
+            <td data-label="品項">${order ? itemName(order.item_id) : '—'}</td>
+            <td data-label="待到貨量">${remaining}</td>
+            <td data-label="操作">
+              <button class="btn-outline" onclick="confirmCancelProductionAllocation(${a.id})">取消剩餘</button>
+              <button class="btn-outline" onclick="openReassignAllocationModal(${a.id})">改分配</button>
+            </td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+      <div class="modal-actions"><button class="btn-outline" onclick="closeModal()">關閉</button></div>`);
+    return;
+  }
+
   const lines = FILTER_EVENT_ITEMS.filter(li=>li.event_id===eventId);
   openModal(`
     <h3>盤點結案｜${e.name}</h3>
-    <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">請輸入各品項實際送回工廠的數量，未送回的部分即視為本次活動使用量。若要整筆取消活動，全數退回即可。</p>
+    <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">請輸入各品項實際剩餘／可歸還數量，系統會自動算出跟帳面的差額；盤點數量跟帳面不同時需要選擇差額原因，異常增加（盤點比帳面多）須填寫備註。</p>
     ${lines.map(li=>`
       <div class="item-block" data-line-id="${li.id}" data-checked-out="${li.checked_out_qty}">
-        <div class="item-block-title">${itemName(li.item_id)}（領用 ${li.checked_out_qty}）</div>
-        <div class="field"><label>退回數量</label><input type="number" class="fe-return-qty" min="0" max="${li.checked_out_qty}" value="${li.checked_out_qty}" oninput="updateFilterEventCloseSummary(${li.id}, ${li.checked_out_qty})"></div>
-        <div id="fe-close-summary-${li.id}" style="font-size:12px;color:var(--gray-50);margin:-6px 0 8px;">使用量：0</div>
-        <div class="field"><label>備註（損耗／異常時填寫，選填）</label><input type="text" class="fe-return-note"></div>
+        <div class="item-block-title">${itemName(li.item_id)}（帳面 ${li.checked_out_qty}）</div>
+        <div class="field"><label>實際剩餘／可歸還數量</label><input type="number" class="fe-return-qty" min="0" step="1" value="${li.checked_out_qty}" oninput="updateFilterEventCloseSummary(${li.id}, ${li.checked_out_qty})"></div>
+        <div id="fe-close-summary-${li.id}" style="font-size:12px;color:var(--gray-50);margin:-6px 0 8px;"></div>
+        <div class="field fe-reason-field" id="fe-reason-field-${li.id}" style="display:none;">
+          <label>差額原因</label>
+          <select class="fe-return-reason">
+            <option value="used">活動使用</option>
+            <option value="damaged">耗損</option>
+            <option value="adjustment">盤點調整</option>
+            <option value="increase_other">異常增加</option>
+          </select>
+        </div>
+        <div class="field"><label>備註（差額原因的說明，異常增加必填）</label><input type="text" class="fe-return-note"></div>
       </div>`).join('')}
     <div class="field"><label>經手人</label><input type="text" id="feCloseBy" placeholder="請輸入姓名"></div>
     <div class="field"><label>整體備註（選填）</label><input type="text" id="feCloseNote"></div>
     <div class="modal-actions">
       <button class="btn-outline" onclick="closeModal()">取消</button>
-      <button class="btn" onclick="confirmCloseFilterEvent(${eventId})">確認退回並結案</button>
+      <button class="btn" onclick="confirmCloseFilterEvent(${eventId})">確認盤點並歸還</button>
     </div>`);
   lines.forEach(li=>updateFilterEventCloseSummary(li.id, li.checked_out_qty));
 }
@@ -1167,25 +1699,48 @@ function updateFilterEventCloseSummary(lineId, checkedOut){
   const input = block.querySelector('.fe-return-qty');
   let ret = Number(input.value);
   if (isNaN(ret) || ret<0) ret = 0;
-  if (ret>checkedOut) ret = checkedOut;
   input.value = ret;
-  const used = checkedOut - ret;
-  document.getElementById('fe-close-summary-'+lineId).textContent = `領用 ${checkedOut}／退回 ${ret}／使用量 ${used}`;
+  const diff = ret - checkedOut;
+  const summaryEl = document.getElementById('fe-close-summary-'+lineId);
+  const reasonField = document.getElementById('fe-reason-field-'+lineId);
+  const reasonSelect = block.querySelector('.fe-return-reason');
+  if (diff === 0){
+    summaryEl.textContent = `帳面 ${checkedOut}／盤點 ${ret}，無差額`;
+    reasonField.style.display = 'none';
+  } else if (diff < 0){
+    summaryEl.textContent = `帳面 ${checkedOut}／盤點 ${ret}，少了 ${-diff}`;
+    reasonField.style.display = 'block';
+    reasonSelect.querySelectorAll('option').forEach(o=>{ o.disabled = (o.value==='increase_other'); });
+    if (reasonSelect.value === 'increase_other') reasonSelect.value = 'used';
+  } else {
+    summaryEl.textContent = `帳面 ${checkedOut}／盤點 ${ret}，多了 ${diff}（異常增加）`;
+    reasonField.style.display = 'block';
+    reasonSelect.querySelectorAll('option').forEach(o=>{ o.disabled = (o.value!=='increase_other'); });
+    reasonSelect.value = 'increase_other';
+  }
 }
 async function confirmCloseFilterEvent(eventId){
   const closed_by = document.getElementById('feCloseBy').value.trim();
   const closed_note = document.getElementById('feCloseNote').value.trim() || null;
   if (!closed_by){ toast('請輸入經手人'); return; }
   const blocks = Array.from(document.querySelectorAll('.item-block[data-line-id]'));
-  const returns = blocks.map(block=>({
-    event_item_id: Number(block.dataset.lineId),
-    returned_qty: Number(block.querySelector('.fe-return-qty').value),
-    note: block.querySelector('.fe-return-note').value.trim() || null
-  }));
+  const returns = [];
+  for (const block of blocks){
+    const checkedOut = Number(block.dataset.checkedOut);
+    const returnedQty = Number(block.querySelector('.fe-return-qty').value);
+    if (isNaN(returnedQty) || returnedQty<0 || returnedQty!==Math.trunc(returnedQty)){ toast('可歸還數量必須是非負整數'); return; }
+    const note = block.querySelector('.fe-return-note').value.trim() || null;
+    let diff_reason = null;
+    if (returnedQty !== checkedOut){
+      diff_reason = block.querySelector('.fe-return-reason').value;
+      if (returnedQty > checkedOut && !note){ toast('異常增加須填寫備註說明原因（品項：'+itemName(Number(FILTER_EVENT_ITEMS.find(li=>li.id===Number(block.dataset.lineId))?.item_id))+'）'); return; }
+    }
+    returns.push({ event_item_id: Number(block.dataset.lineId), returned_qty: returnedQty, diff_reason, note });
+  }
   await guardSubmit('confirmCloseFilterEvent', async ()=>{
     const { error } = await sb.rpc('close_filter_event', { p_event_id:eventId, p_returns:returns, p_closed_by:closed_by, p_closed_note:closed_note });
     if (error){ toast('結案失敗：'+error.message); return; }
-    closeModal(); toast('已確認退回並結案'); loadAll();
+    closeModal(); toast('已確認盤點並歸還'); loadAll();
   });
 }
 
@@ -2151,7 +2706,7 @@ document.addEventListener('click', e=>{
   if (!e.target.closest('#backupMenu') && e.target.tagName!=='BUTTON'){ menu.style.display='none'; }
 });
 // store_pins/factory_auth（登入密碼雜湊）刻意不納入備份範圍，避免明碼備份檔外流等同洩漏所有登入密碼
-const BACKUP_TABLES = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','batch_history','counting_sessions','cupping_beans','cupping_participants','cupping_sessions','cupping_roastery_staff','filter_stock','filter_stock_receipts','filter_orders','filter_events','filter_event_items','filter_stock_adjustments'];
+const BACKUP_TABLES = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','batch_history','counting_sessions','cupping_beans','cupping_participants','cupping_sessions','cupping_roastery_staff','filter_stock','filter_stock_receipts','filter_orders','filter_events','filter_event_items','filter_stock_adjustments','filter_factories','filter_production_orders','filter_production_allocations','filter_production_arrivals','filter_production_arrival_items'];
 async function exportBackup(){
   toggleBackupMenu();
   const tables = {};
