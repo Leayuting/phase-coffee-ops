@@ -82,6 +82,7 @@ tr[data-item-id].dragging{opacity:.4;background:var(--gray-08);}
 .filter-stock-table .btn-outline{min-width:84px;height:30px;padding:0 8px;display:inline-flex;align-items:center;justify-content:center;}
 .filter-stock-table .badge{display:inline-block;min-width:56px;text-align:center;}
 .filter-stock-table input.fs-edit-qty{width:100%;max-width:72px;text-align:center;margin:0 auto;display:block;}
+.filter-stock-table tr.low-stock{background:var(--red-bg);}
 /* 製作中／待到貨：品項/工廠/送製量/已到貨量/待到貨量/預計到貨日/狀態/操作，固定欄寬同上一組慣例 */
 .production-table{table-layout:fixed;}
 .production-table th,.production-table td{vertical-align:middle;padding:9px 8px;font-size:13px;border-bottom:1px solid var(--gray-08);}
@@ -1005,6 +1006,9 @@ async function deleteFilterStockItem(item_id){
   toast('已刪除濾掛品項'); loadAll();
 }
 
+// 濾掛一般可用量低於這個數字就視為庫存偏低，提示是否要再送製（純顯示用的門檻，不影響任何庫存邏輯）
+const FILTER_LOW_STOCK_THRESHOLD = 500;
+function isFilterStockLow(f){ return Number(f.quantity) < FILTER_LOW_STOCK_THRESHOLD; }
 // ── 濾掛送製／到貨（委託代工生產，分批到貨時才分配進一般庫存或指定活動） ──
 function factoryName(id){
   const f = FILTER_FACTORIES.find(x=>x.id===id);
@@ -1210,6 +1214,17 @@ function openCreateProductionOrderModal(){
       <button class="btn" onclick="submitCreateProductionOrder()">送出</button>
     </div>`);
 }
+// 從「庫存偏低」警示點「＋送製」進來：直接開同一個新增送製視窗，預選該品項，
+// 數量預填「補到門檻所需量」方便直接確認/調整送出，不是自動送出。
+function openCreateProductionOrderModalForItem(itemId){
+  openCreateProductionOrderModal();
+  const f = FILTER_STOCK_ALL.find(x=>x.item_id===itemId);
+  const suggested = f ? Math.max(FILTER_LOW_STOCK_THRESHOLD - Number(f.quantity), 1) : 1;
+  const itemSel = document.getElementById('poItem');
+  if (itemSel) itemSel.value = String(itemId);
+  const qtyInput = document.getElementById('poQuantity');
+  if (qtyInput) qtyInput.value = String(suggested);
+}
 async function submitCreateProductionOrder(){
   const item_id = Number(document.getElementById('poItem').value);
   const factory_id = Number(document.getElementById('poFactory').value);
@@ -1403,7 +1418,11 @@ function renderFilterStockGrouped(){
   const stockMap = new Map(FILTER_STOCK_ALL.map(f=>[f.item_id, f]));
   const orderedIds = ITEMS.map(i=>i.id).filter(id=>stockMap.has(id));
   const groups = groupItemIdsByCategory(orderedIds);
-  return groups.map(g=>`
+  const lowStockIds = orderedIds.filter(id=>isFilterStockLow(stockMap.get(id)));
+  const banner = lowStockIds.length
+    ? `<div class="legend" style="color:var(--danger);font-weight:600;margin-bottom:10px;">⚠ ${lowStockIds.length} 項濾掛一般可用量低於 ${FILTER_LOW_STOCK_THRESHOLD}，請確認是否需要再送製：${lowStockIds.map(id=>itemName(id)).join('、')}</div>`
+    : '';
+  return banner + groups.map(g=>`
     <details open style="margin-bottom:10px;border:1px solid var(--gray-08);border-radius:6px;overflow:hidden;">
       <summary style="background:${g.meta.color};color:${g.meta.text};padding:9px 12px;font-weight:700;cursor:pointer;list-style:none;">
         ${g.meta.zh}（${g.itemIds.length}）
@@ -1413,13 +1432,15 @@ function renderFilterStockGrouped(){
         <tbody>${g.itemIds.map(id=>{
           const f = stockMap.get(id);
           const held = filterEventHoldQty(id);
-          return `<tr>
-            <td data-label="品項">${itemName(id)}</td>
+          const low = isFilterStockLow(f);
+          return `<tr${low ? ' class="low-stock"' : ''}>
+            <td data-label="品項">${itemName(id)}${low ? ' <span class="badge" style="background:var(--danger);">庫存偏低</span>' : ''}</td>
             <td data-label="實體總量">${Number(f.quantity) + held}</td>
             <td data-label="活動預留量">${held}</td>
             <td data-label="一般可用量">${filterStockEditMode ? `<input type="number" class="fs-edit-qty mini-input" data-item-id="${id}" min="0" step="1" value="${f.quantity}">` : f.quantity}</td>
             <td data-label="最近更新">${fmtDT(new Date(f.updated_at).getTime())}</td>
             <td data-label="操作">
+              ${low ? `<button class="btn-sm" onclick="openCreateProductionOrderModalForItem(${id})">＋送製</button>` : ''}
               ${filterStockEditMode ? `<button class="btn-danger" onclick="deleteFilterStockItem(${id})">刪除</button>` : ''}
             </td>
           </tr>`;
