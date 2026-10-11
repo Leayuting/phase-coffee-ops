@@ -83,6 +83,7 @@ tr[data-item-id].dragging{opacity:.4;background:var(--gray-08);}
 .filter-stock-table .badge{display:inline-block;min-width:56px;text-align:center;}
 .filter-stock-table input.fs-edit-qty{width:100%;max-width:72px;text-align:center;margin:0 auto;display:block;}
 .filter-stock-table tr.low-stock{background:var(--red-bg);}
+.filter-stock-table tr.low-stock-pending{background:var(--yellow-bg);}
 /* 製作中／待到貨：品項/工廠/送製量/已到貨量/待到貨量/預計到貨日/狀態/操作，固定欄寬同上一組慣例 */
 .production-table{table-layout:fixed;}
 .production-table th,.production-table td{vertical-align:middle;padding:9px 8px;font-size:13px;border-bottom:1px solid var(--gray-08);}
@@ -1009,6 +1010,19 @@ async function deleteFilterStockItem(item_id){
 // 濾掛一般可用量低於這個數字就視為庫存偏低，提示是否要再送製（純顯示用的門檻，不影響任何庫存邏輯）
 const FILTER_LOW_STOCK_THRESHOLD = 500;
 function isFilterStockLow(f){ return Number(f.quantity) < FILTER_LOW_STOCK_THRESHOLD; }
+// 該品項目前還在途、且到貨後會真的補進「一般可用量」的送製量
+// （只算 dest_type='general' 的分配——分配給活動的送製到貨不會增加一般可用量,跟這裡要回答的
+// 「一般庫存夠不夠」無關）
+function filterPendingGeneralProductionQty(itemId){
+  return FILTER_PRODUCTION_ORDERS
+    .filter(o=>o.item_id===itemId)
+    .reduce((sum,o)=>{
+      const allocSum = FILTER_PRODUCTION_ALLOCATIONS
+        .filter(a=>a.production_order_id===o.id && a.dest_type==='general')
+        .reduce((s,a)=>s+Math.max(0, a.planned_qty-a.arrived_qty-a.cancelled_qty), 0);
+      return sum + allocSum;
+    }, 0);
+}
 // ── 濾掛送製／到貨（委託代工生產，分批到貨時才分配進一般庫存或指定活動） ──
 function factoryName(id){
   const f = FILTER_FACTORIES.find(x=>x.id===id);
@@ -1215,11 +1229,13 @@ function openCreateProductionOrderModal(){
     </div>`);
 }
 // 從「庫存偏低」警示點「＋送製」進來：直接開同一個新增送製視窗，預選該品項，
-// 數量預填「補到門檻所需量」方便直接確認/調整送出，不是自動送出。
+// 數量預填「補到門檻所需量」（已扣掉在途待到貨量，避免建議重複補）方便直接確認/調整送出，
+// 不是自動送出。
 function openCreateProductionOrderModalForItem(itemId){
   openCreateProductionOrderModal();
   const f = FILTER_STOCK_ALL.find(x=>x.item_id===itemId);
-  const suggested = f ? Math.max(FILTER_LOW_STOCK_THRESHOLD - Number(f.quantity), 1) : 1;
+  const pending = f ? filterPendingGeneralProductionQty(itemId) : 0;
+  const suggested = f ? Math.max(FILTER_LOW_STOCK_THRESHOLD - Number(f.quantity) - pending, 1) : 1;
   const itemSel = document.getElementById('poItem');
   if (itemSel) itemSel.value = String(itemId);
   const qtyInput = document.getElementById('poQuantity');
@@ -1419,8 +1435,12 @@ function renderFilterStockGrouped(){
   const orderedIds = ITEMS.map(i=>i.id).filter(id=>stockMap.has(id));
   const groups = groupItemIdsByCategory(orderedIds);
   const lowStockIds = orderedIds.filter(id=>isFilterStockLow(stockMap.get(id)));
+  const bannerItems = lowStockIds.map(id=>{
+    const pending = filterPendingGeneralProductionQty(id);
+    return pending>0 ? `${itemName(id)}（已送製中，待到貨 ${pending}）` : itemName(id);
+  });
   const banner = lowStockIds.length
-    ? `<div class="legend" style="color:var(--danger);font-weight:600;margin-bottom:10px;">⚠ ${lowStockIds.length} 項濾掛一般可用量低於 ${FILTER_LOW_STOCK_THRESHOLD}，請確認是否需要再送製：${lowStockIds.map(id=>itemName(id)).join('、')}</div>`
+    ? `<div class="legend" style="color:var(--danger);font-weight:600;margin-bottom:10px;">⚠ ${lowStockIds.length} 項濾掛一般可用量低於 ${FILTER_LOW_STOCK_THRESHOLD}，請確認是否需要再送製：${bannerItems.join('、')}</div>`
     : '';
   return banner + groups.map(g=>`
     <details open style="margin-bottom:10px;border:1px solid var(--gray-08);border-radius:6px;overflow:hidden;">
@@ -1433,14 +1453,19 @@ function renderFilterStockGrouped(){
           const f = stockMap.get(id);
           const held = filterEventHoldQty(id);
           const low = isFilterStockLow(f);
-          return `<tr${low ? ' class="low-stock"' : ''}>
-            <td data-label="品項">${itemName(id)}${low ? ' <span class="badge" style="background:var(--danger);">庫存偏低</span>' : ''}</td>
+          const pending = low ? filterPendingGeneralProductionQty(id) : 0;
+          const rowCls = low ? (pending>0 ? ' class="low-stock-pending"' : ' class="low-stock"') : '';
+          const badgeHtml = !low ? '' : (pending>0
+            ? ` <span class="badge" style="background:var(--warn);">庫存偏低・已送製中（待到貨 ${pending}）</span>`
+            : ` <span class="badge" style="background:var(--danger);">庫存偏低</span>`);
+          return `<tr${rowCls}>
+            <td data-label="品項">${itemName(id)}${badgeHtml}</td>
             <td data-label="實體總量">${Number(f.quantity) + held}</td>
             <td data-label="活動預留量">${held}</td>
             <td data-label="一般可用量">${filterStockEditMode ? `<input type="number" class="fs-edit-qty mini-input" data-item-id="${id}" min="0" step="1" value="${f.quantity}">` : f.quantity}</td>
             <td data-label="最近更新">${fmtDT(new Date(f.updated_at).getTime())}</td>
             <td data-label="操作">
-              ${low ? `<button class="btn-sm" onclick="openCreateProductionOrderModalForItem(${id})">＋送製</button>` : ''}
+              ${low ? `<button class="btn-sm" onclick="openCreateProductionOrderModalForItem(${id})">${pending>0 ? '＋加開送製' : '＋送製'}</button>` : ''}
               ${filterStockEditMode ? `<button class="btn-danger" onclick="deleteFilterStockItem(${id})">刪除</button>` : ''}
             </td>
           </tr>`;
