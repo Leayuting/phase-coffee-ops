@@ -302,6 +302,8 @@ const CUPPING_ENABLED = true;
 let CUPPING_BEANS = [], CUPPING_PARTICIPANTS = [], CUPPING_SESSIONS = [], CUPPING_ROASTERY_STAFF = [];
 
 const DECISIONS = ['調回','變成出杯豆','報廢','其他'];
+// 濾掛是已完成包裝的成品（已磨粉/分裝/密封），不可能變回沖煮用的豆子，處置方式不能有「變成出杯豆」
+const FILTER_DECISIONS = DECISIONS.filter(d=>d!=='變成出杯豆');
 
 // ══════════ 登入（PIN，邏輯同門市採購系統） ══════════
 const PIN_LENGTH = 8;
@@ -799,7 +801,7 @@ function openFilterRecallModal(storeId, itemId, currentQty){
     <h3>發起回收｜${storeName(storeId)}・${itemName(itemId)}</h3>
     <div class="field"><label>門市目前庫存</label><div>${currentQty}</div></div>
     <div class="field"><label>回收數量</label><input type="number" id="frQty" min="1" max="${currentQty}" step="1" value="${currentQty}"></div>
-    <div class="field"><label>處置方式</label><select id="frDecision">${DECISIONS.map(d=>`<option>${d}</option>`).join('')}</select></div>
+    <div class="field"><label>處置方式</label><select id="frDecision">${FILTER_DECISIONS.map(d=>`<option>${d}</option>`).join('')}</select></div>
     <div class="field"><label>備註（選填）</label><input type="text" id="frNote"></div>
     <div class="modal-actions">
       <button class="btn-outline" onclick="closeModal()">取消</button>
