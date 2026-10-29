@@ -359,10 +359,16 @@ function enterApp(){
   if (lastTab && document.getElementById('tab-'+lastTab)) switchTab(lastTab);
   init();
 }
+// enterApp() 在 init() 的 loadAll() 真正完成前就可能先呼叫 switchTab(lastTab)（恢復上次停留的
+// 分頁），如果上次剛好停在「品項管理」，switchTab 裡掛的品項同步就會在 ITEMS_ALL 還是空陣列
+// 時跑，把所有已存在的品項誤判成「新品項」整批重複新增一次（2026-10-29 查出的品項重複 bug
+// 根因）。appReady 只在 loadAll() 真正跑完後才設成 true，switchTab 要看到這個旗標才會觸發同步。
+let appReady = false;
 
 async function init(){
   document.getElementById('cuppingTabBtn').style.display = CUPPING_ENABLED ? '' : 'none';
   await loadAll();
+  appReady = true;
   subscribeRealtime();
   setInterval(()=>{ if (!isEditingInput()) render(); }, 30000);
   syncItemsFromBeansDB();
@@ -465,11 +471,15 @@ function switchTab(tab){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active', p.id==='tab-'+tab));
   localStorage.setItem(LAST_TAB_KEY, tab);
-  if (tab==='items') syncItemsFromBeansDB();
+  if (tab==='items' && appReady) syncItemsFromBeansDB();
 }
 let itemsSyncing = false;
 async function syncItemsFromBeansDB(){
   if (itemsSyncing) return;
+  // ITEMS_ALL 還沒真正載入完成時絕對不能跑這段比對，否則會把既有品項全部誤判成「新品項」
+  // 整批重複新增（2026-10-29 查出的品項重複 bug 根因）；呼叫端已經用 appReady 旗標擋過一層，
+  // 這裡再擋一次純粹是防呆，避免之後又有新的呼叫路徑忘記檢查 appReady。
+  if (!ITEMS_ALL.length) return;
   itemsSyncing = true;
   try{
     const { data, error } = await beansSb.from('beans').select('name_zh, category_code').is('deleted_at', null).is('delisted_at', null);
@@ -483,7 +493,10 @@ async function syncItemsFromBeansDB(){
     if (newNames.length){
       const maxSort = Math.max(0, ...ITEMS_ALL.map(i=>i.sort_order));
       const rows = newNames.map((name, idx) => ({ name, active:true, sort_order: maxSort+1+idx, category_code: byName[name] }));
-      const { error:e2 } = await sb.from('items').insert(rows);
+      // upsert + ignoreDuplicates：就算真的撞到同一瞬間另一個分頁/裝置也在同步同一個新品項，
+      // 資料庫的 items_name_unique 唯一限制也會擋下重複，這裡用 ignoreDuplicates 讓對方的那筆
+      // 安靜跳過，不會整批報錯、也不會產生分身品項。
+      const { error:e2 } = await sb.from('items').upsert(rows, { onConflict: 'name', ignoreDuplicates: true });
       if (!e2) addedCount = newNames.length; else console.error(e2);
     }
 
