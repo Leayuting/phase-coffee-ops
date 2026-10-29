@@ -745,6 +745,9 @@ function renderFilterLatestUpdateBar(){
   });
   return `<div class="grid3" style="margin-bottom:12px;">${cards.join('')}</div>`;
 }
+function pendingFilterReturn(storeId, itemId){
+  return RETURNS.find(r=>r.store_id===storeId && r.item_id===itemId && r.channel==='filter' && r.status==='pending');
+}
 function renderFilterBoardTab(){
   const el = document.getElementById('tab-filterboard');
   if (!el) return;
@@ -764,9 +767,14 @@ function renderFilterBoardTab(){
             <div class="grid3">
               ${STORES.map(st=>{
                 const row = byItem[itemId].find(r=>r.store_id===st.id);
+                const pending = pendingFilterReturn(st.id, itemId);
+                const action = pending
+                  ? `<span class="badge" style="background:var(--warn);margin-top:4px;display:inline-block;">已通知門店，待完成</span>`
+                  : (row && Number(row.quantity)>0 ? `<button class="btn-outline" style="margin-top:4px;display:block;" onclick="openFilterRecallModal('${st.id}', ${itemId}, ${row.quantity})">發起回收</button>` : '');
                 return `<div class="store-col">
                   <div class="store-label">${st.name}</div>
                   ${row ? `<div class="batch-line">× ${row.quantity}</div>` : `<div class="empty-msg" style="padding:2px;">無庫存</div>`}
+                  ${action}
                 </div>`;
               }).join('')}
             </div>
@@ -778,14 +786,36 @@ function renderFilterBoardTab(){
     ${renderFilterLatestUpdateBar()}
     <div class="section">
       <h2>跨店濾掛庫存看板</h2>
-      <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">各門市自行盤點／新增的濾掛庫存即時同步顯示在這裡，工廠端僅供查看，不能在此直接修改門市庫存（門市濾掛庫存由各門市自己管理）。</p>
+      <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">各門市自行盤點／新增的濾掛庫存即時同步顯示在這裡；可以對任一門市的任一品項發起回收，門市確認調回後才會真的從門市庫存扣除，工廠端無法在此直接修改門市庫存數字。</p>
       ${boardHtml}
     </div>
     <div class="section">
       <h2>回收歷史紀錄</h2>
-      <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">以下為濾掛改成門市/工廠各自管理前的歷史回收紀錄，僅供查閱。</p>
       ${renderReturnHistory('filter')}
     </div>`;
+}
+function openFilterRecallModal(storeId, itemId, currentQty){
+  openModal(`
+    <h3>發起回收｜${storeName(storeId)}・${itemName(itemId)}</h3>
+    <div class="field"><label>門市目前庫存</label><div>${currentQty}</div></div>
+    <div class="field"><label>回收數量</label><input type="number" id="frQty" min="1" max="${currentQty}" step="1" value="${currentQty}"></div>
+    <div class="field"><label>處置方式</label><select id="frDecision">${DECISIONS.map(d=>`<option>${d}</option>`).join('')}</select></div>
+    <div class="field"><label>備註（選填）</label><input type="text" id="frNote"></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="submitFilterRecall('${storeId}', ${itemId})">通知門店</button>
+    </div>`);
+}
+async function submitFilterRecall(storeId, itemId){
+  const qtyStr = document.getElementById('frQty').value.trim();
+  if (!/^\d+$/.test(qtyStr) || Number(qtyStr)<=0){ toast('回收數量必須是大於 0 的整數'); return; }
+  const decision = document.getElementById('frDecision').value;
+  const note = document.getElementById('frNote').value.trim() || null;
+  await guardSubmit('submitFilterRecall', async ()=>{
+    const { error } = await sb.rpc('initiate_filter_recall', { p_store_id:storeId, p_item_id:itemId, p_quantity:Number(qtyStr), p_decision:decision, p_note:note });
+    if (error){ toast('通知失敗：'+error.message); return; }
+    closeModal(); toast('已通知門店'); loadAll();
+  });
 }
 function viewSignature(sigId){
   const sig = SIGNATURES.find(s=>s.id===sigId);
