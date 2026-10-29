@@ -658,13 +658,59 @@ async function deleteItem(id, name){
   const { error } = await sb.from('items').delete().eq('id', id);
   if (error){
     if (error.code === '23503'){
-      toast('此品項已有批次／下單歷史紀錄，無法刪除，可改用「停用」隱藏');
+      openForceDeleteModal(id, name);
     } else {
       toast('刪除失敗：'+error.message);
     }
     return;
   }
   toast('已刪除品項'); loadAll();
+}
+const REFERENCE_TABLE_LABELS = {
+  batches: '批次', filter_event_items: '活動暫存品項', filter_orders: '濾掛訂單（舊）',
+  filter_production_orders: '濾掛送製單', filter_stock: '工廠濾掛庫存',
+  filter_stock_adjustments: '濾掛庫存異動紀錄', filter_stock_receipts: '濾掛進貨收據（舊）',
+  returns: '回收紀錄', store_filter_stock: '門市濾掛庫存', transfer_requests: '調貨申請'
+};
+async function openForceDeleteModal(id, name){
+  openModal(`<h3>此品項已有歷史紀錄</h3><p style="color:var(--gray-50);font-size:12.5px;">讀取中…</p>`);
+  const { data: counts, error } = await sb.rpc('count_item_references', { p_item_id: id });
+  if (error){ closeModal(); toast('查詢歷史紀錄失敗：'+error.message); return; }
+  const rows = Object.entries(counts).filter(([,n])=>n>0);
+  const rowsHtml = rows.length
+    ? `<table><thead><tr><th>紀錄類型</th><th>筆數</th></tr></thead><tbody>${rows.map(([k,n])=>`<tr><td data-label="紀錄類型">${REFERENCE_TABLE_LABELS[k]||k}</td><td data-label="筆數">${n}</td></tr>`).join('')}</tbody></table>`
+    : `<p>查無任何關聯紀錄。</p>`;
+  openModal(`
+    <h3>此品項已有歷史紀錄｜${name}</h3>
+    <p style="color:var(--gray-50);font-size:12.5px;margin-bottom:10px;">「${name}」已有以下歷史紀錄，無法直接刪除。建議改用「停用」隱藏（不影響歷史紀錄，之後可以再啟用）；若確定這個品項跟下面這些紀錄都已經用不到，也可以選擇永久刪除。</p>
+    ${rowsHtml}
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="toggleItemActive(${id}, false); closeModal();">改為停用</button>
+      <button class="btn-danger" onclick="openForceDeleteConfirm(${id}, '${name.replace(/'/g,"\\'")}')">永久刪除</button>
+    </div>`);
+}
+function openForceDeleteConfirm(id, name){
+  openModal(`
+    <h3 style="color:var(--danger);">⚠ 永久刪除「${name}」</h3>
+    <p style="color:var(--gray-50);font-size:12.5px;margin-bottom:10px;">這個動作會把「${name}」以及上面列出的所有歷史紀錄從資料庫永久刪除，<b>無法復原</b>。請在下方輸入完整品項名稱「${name}」以確認。</p>
+    <div class="field"><input type="text" id="forceDeleteConfirmInput" placeholder="請輸入「${name}」"></div>
+    <div class="modal-actions">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn-danger" onclick="confirmForceDeleteItem(${id}, '${name.replace(/'/g,"\\'")}')">確認永久刪除</button>
+    </div>`);
+}
+async function confirmForceDeleteItem(id, name){
+  const typed = document.getElementById('forceDeleteConfirmInput').value.trim();
+  if (typed !== name){ toast('輸入的名稱不符，請重新輸入'); return; }
+  await guardSubmit('confirmForceDeleteItem', async ()=>{
+    const { data: counts, error } = await sb.rpc('force_delete_item', { p_item_id: id });
+    if (error){ toast('刪除失敗：'+error.message); return; }
+    const deleted = Object.entries(counts||{}).filter(([,n])=>n>0).map(([k,n])=>`${REFERENCE_TABLE_LABELS[k]||k}×${n}`).join('、');
+    closeModal();
+    toast(`已永久刪除「${name}」${deleted ? '，連同 '+deleted : ''}`);
+    loadAll();
+  });
 }
 let itemDragRow = null, itemDragTbody = null;
 function onItemDragStart(e, row){
