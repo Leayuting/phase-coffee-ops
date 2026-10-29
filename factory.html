@@ -288,6 +288,7 @@ let filterStockEditMode = false, filterStockEditSnapshot = null;
 let FILTER_EVENTS = [], FILTER_EVENT_ITEMS = [];
 let FILTER_FACTORIES = [], FILTER_PRODUCTION_ORDERS = [], FILTER_PRODUCTION_ALLOCATIONS = [],
     FILTER_PRODUCTION_ARRIVALS = [], FILTER_PRODUCTION_ARRIVAL_ITEMS = [];
+let STORE_FILTER_STOCK = []; // 門市各自盤點的濾掛庫存（跨店濾掛庫存看板用,跟工廠自己的 FILTER_STOCK_ALL 是兩回事）
 let FACTORY_PINS = [];
 let BATCHES = [], RETURNS = [], TRANSFERS = [];
 let ANNOUNCEMENTS = [], RECEIPTS = [];
@@ -400,9 +401,10 @@ async function loadAll(){
       sb.from('filter_production_orders').select('*').order('created_at',{ascending:false}),
       sb.from('filter_production_allocations').select('*'),
       sb.from('filter_production_arrivals').select('*').order('arrived_at',{ascending:false}),
-      sb.from('filter_production_arrival_items').select('*')
+      sb.from('filter_production_arrival_items').select('*'),
+      sb.from('store_filter_stock').select('*')
     );
-    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts},{data:signatures},{data:countLogs},cuppingBeansRes,cuppingParticipantsRes,cuppingSessionsRes,cuppingRoasteryStaffRes,filterStockRes,filterEventsRes,filterEventItemsRes,factoryPinsRes,filterFactoriesRes,filterProductionOrdersRes,filterProductionAllocationsRes,filterProductionArrivalsRes,filterProductionArrivalItemsRes] = await Promise.all(queries);
+    const [{data:stores},{data:itemsAll},{data:batches},{data:returns},{data:transfers},{data:announcements},{data:receipts},{data:signatures},{data:countLogs},cuppingBeansRes,cuppingParticipantsRes,cuppingSessionsRes,cuppingRoasteryStaffRes,filterStockRes,filterEventsRes,filterEventItemsRes,factoryPinsRes,filterFactoriesRes,filterProductionOrdersRes,filterProductionAllocationsRes,filterProductionArrivalsRes,filterProductionArrivalItemsRes,storeFilterStockRes] = await Promise.all(queries);
     STORES = stores || []; ITEMS_ALL = itemsAll || []; ITEMS = ITEMS_ALL.filter(i=>i.active);
     BATCHES = batches || []; RETURNS = returns || []; TRANSFERS = transfers || [];
     COUNT_LOGS = countLogs || [];
@@ -423,6 +425,7 @@ async function loadAll(){
     FILTER_PRODUCTION_ALLOCATIONS = (filterProductionAllocationsRes && filterProductionAllocationsRes.data) || [];
     FILTER_PRODUCTION_ARRIVALS = (filterProductionArrivalsRes && filterProductionArrivalsRes.data) || [];
     FILTER_PRODUCTION_ARRIVAL_ITEMS = (filterProductionArrivalItemsRes && filterProductionArrivalItemsRes.data) || [];
+    STORE_FILTER_STOCK = (storeFilterStockRes && storeFilterStockRes.data) || [];
     setSyncStatus('ok');
   }catch(e){ console.error(e); setSyncStatus('local'); }
   render();
@@ -449,7 +452,7 @@ document.addEventListener('focusout', ()=>{
 function subscribeRealtime(){
   const tables = ['stores','items','batches','returns','transfer_requests','announcements','announcement_receipts','counting_sessions'];
   if (CUPPING_ENABLED) tables.push('cupping_beans','cupping_participants','cupping_sessions','cupping_roastery_staff');
-  tables.push('filter_stock','filter_events','filter_event_items','filter_factories','filter_production_orders','filter_production_allocations','filter_production_arrivals','filter_production_arrival_items');
+  tables.push('filter_stock','filter_events','filter_event_items','filter_factories','filter_production_orders','filter_production_allocations','filter_production_arrivals','filter_production_arrival_items','store_filter_stock');
   const ch = sb.channel('factory-realtime');
   tables.forEach(t=>ch.on('postgres_changes',{event:'*',schema:'public',table:t}, scheduleReload));
   ch.subscribe(s=>{
@@ -501,7 +504,7 @@ function render(){
   renderItemsTab();
   renderAlertTab();
   renderSimpleBoardTab('brew', 'brewboard', '跨店沖煮豆庫存看板');
-  renderSimpleBoardTab('filter', 'filterboard', '跨店濾掛庫存看板');
+  renderFilterBoardTab();
   renderFilterStockTab();
   renderTransfersTab();
   renderAnnouncementsTab();
@@ -707,6 +710,69 @@ function renderLatestCountBar(channel){
     return `<div style="background:${bg};color:#fff;padding:8px 12px;border-radius:8px;font-weight:600;font-size:12.5px;">${text}${sigLink}</div>`;
   });
   return `<div class="grid3" style="margin-bottom:12px;">${cards.join('')}</div>`;
+}
+
+// ══════════ 濾掛總覽（跨店庫存看板，2026-09 之後改讀 store_filter_stock——門市濾掛盤點
+// 已經改成各自寫自己的 store_filter_stock，不再走 batches/channel=filter 那套，
+// 所以這個分頁不能再沿用 renderSimpleBoardTab/renderLatestCountBar 那套讀 BATCHES／
+// COUNT_LOGS 的舊邏輯，否則永遠停在改版前最後一筆資料、門市怎麼盤點都不會動） ══════════
+function renderFilterLatestUpdateBar(){
+  const cards = STORES.map(st=>{
+    const rows = STORE_FILTER_STOCK.filter(f=>f.store_id===st.id);
+    if (!rows.length){
+      return `<div style="background:var(--warn);color:#fff;padding:8px 12px;border-radius:8px;font-weight:600;font-size:12.5px;">${st.name}：尚無濾掛庫存資料</div>`;
+    }
+    const latestMs = Math.max(...rows.map(r=>new Date(r.updated_at).getTime()));
+    const cp = taipeiParts(latestMs);
+    const isToday = dateStr(cp.y, cp.m, cp.d) === todayStr();
+    const dtLabel = fmtDTFull(latestMs);
+    const bg = isToday ? 'var(--ok)' : 'var(--danger)';
+    const text = isToday ? `${st.name}：今日有異動｜最新 ${dtLabel}` : `${st.name}：今日尚無異動｜上次 ${dtLabel}`;
+    return `<div style="background:${bg};color:#fff;padding:8px 12px;border-radius:8px;font-weight:600;font-size:12.5px;">${text}</div>`;
+  });
+  return `<div class="grid3" style="margin-bottom:12px;">${cards.join('')}</div>`;
+}
+function renderFilterBoardTab(){
+  const el = document.getElementById('tab-filterboard');
+  if (!el) return;
+  const byItem = {};
+  STORE_FILTER_STOCK.forEach(r=>{ (byItem[r.item_id] ||= []).push(r); });
+  const order = ITEMS.map(i=>i.id).filter(id=>byItem[id]);
+  const groups = groupItemIdsByCategory(order);
+  const boardHtml = groups.length ? groups.map(g=>`
+    <details open style="margin-bottom:10px;border:1px solid var(--gray-08);border-radius:6px;overflow:hidden;">
+      <summary style="background:${g.meta.color};color:${g.meta.text};padding:9px 12px;font-weight:700;cursor:pointer;list-style:none;">
+        ${g.meta.zh}（${g.itemIds.length}）
+      </summary>
+      <div style="padding:10px 12px;">
+        ${g.itemIds.map(itemId=>`
+          <div class="item-block">
+            <div class="item-block-title">${itemName(itemId)}</div>
+            <div class="grid3">
+              ${STORES.map(st=>{
+                const row = byItem[itemId].find(r=>r.store_id===st.id);
+                return `<div class="store-col">
+                  <div class="store-label">${st.name}</div>
+                  ${row ? `<div class="batch-line">× ${row.quantity}</div>` : `<div class="empty-msg" style="padding:2px;">無庫存</div>`}
+                </div>`;
+              }).join('')}
+            </div>
+          </div>`).join('')}
+      </div>
+    </details>`).join('') : `<div class="empty-msg">目前沒有門市濾掛庫存資料</div>`;
+
+  el.innerHTML = `
+    ${renderFilterLatestUpdateBar()}
+    <div class="section">
+      <h2>跨店濾掛庫存看板</h2>
+      <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">各門市自行盤點／新增的濾掛庫存即時同步顯示在這裡，工廠端僅供查看，不能在此直接修改門市庫存（門市濾掛庫存由各門市自己管理）。</p>
+      ${boardHtml}
+    </div>
+    <div class="section">
+      <h2>回收歷史紀錄</h2>
+      <p style="color:var(--gray-50);font-size:12px;margin-bottom:10px;">以下為濾掛改成門市/工廠各自管理前的歷史回收紀錄，僅供查閱。</p>
+      ${renderReturnHistory('filter')}
+    </div>`;
 }
 function viewSignature(sigId){
   const sig = SIGNATURES.find(s=>s.id===sigId);
